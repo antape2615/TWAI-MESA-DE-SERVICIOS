@@ -1,0 +1,43 @@
+# Blueprint Render: https://render.com/docs/infrastructure-as-code
+# Tras conectar el repo, Render ejecuta build/start y expone la app en un único servicio (API + SPA).
+
+version: "1"
+
+services:
+  - type: web
+    name: twai-mesa-servicios
+    runtime: node
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AZURE_OPENAI_ENDPOINT
+        sync: false
+      - key: AZURE_OPENAI_API_KEY
+        sync: false
+      - key: AZURE_OPENAI_API_VERSION
+        value: 2025-01-01-preview
+      - key: AZURE_OPENAI_DEPLOYMENT_NAME
+        sync: false
+      - key: TICKET_NOTIFY_EMAIL
+        value: angiepena@cbit-online.com
+      # Opcional: correo (Resend o SMTP). Si no se definen, el ticket se crea igual.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

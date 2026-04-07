@@ -1,0 +1,28 @@
+{
+  "entries": [
+    {
+      "id": "kb-1",
+      "keywords": ["contraseña", "password", "login", "acceso"],
+      "title": "Restablecer contraseña",
+      "response": "En el portal de identidad, use «Olvidé mi contraseña» y siga el enlace al correo registrado. Si no recibe el mail, revise carpeta de spam o contacte a TI para verificar el usuario."
+    },
+    {
+      "id": "kb-2",
+      "keywords": ["vpn", "red", "conexión"],
+      "title": "Problemas de VPN",
+      "response": "Compruebe que el cliente VPN esté actualizado, cierre sesión y vuelva a conectar. Si persiste el error, anote el código mostrado y abra un ticket con captura de pantalla."
+    },
+    {
+      "id": "kb-3",
+      "keywords": ["impresora", "impresión"],
+      "title": "Cola de impresión",
+      "response": "Cancele trabajos atascados en el panel de impresoras de Windows, reinicie el spooler o reinicie la impresora. Si el error es de driver, solicite reinstalación vía ticket."
+    }
+  ],
+  "slaHoursByPriority": {
+    "critica": 2,
+    "alta": 8,
+    "media": 24,
+    "baja": 72
+  }
+}

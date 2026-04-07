@@ -1,0 +1,496 @@
+#root {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+header {
+  background: #15601d;
+  color: #fff;
+  border-radius: 16px;
+  padding: 1.75rem 2rem;
+}
+
+.header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  margin-bottom: 0.35rem;
+  color: #6dfd8c;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.65rem;
+}
+
+.subtitle {
+  margin: 0.5rem 0 0;
+  color: #bfe8c0;
+  max-width: 640px;
+  font-size: 0.95rem;
+}
+
+nav.tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+nav.tabs button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.5rem 1.15rem;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e8ffe8;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+nav.tabs button:hover {
+  background: rgba(109, 253, 140, 0.25);
+}
+
+nav.tabs button.active {
+  background: #6dfd8c;
+  color: #15601d;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.panel {
+  border: 1px solid #bfe8c0;
+  border-radius: 16px;
+  padding: 1.5rem;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(21, 96, 29, 0.08);
+}
+
+.panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  color: #15601d;
+}
+
+.hint {
+  font-size: 0.88rem;
+  color: #15601d;
+  opacity: 0.85;
+  margin: 0 0 1rem;
+}
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.field-row label {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: #15601d;
+}
+
+.field-row input {
+  border: 1px solid #bfe8c0;
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.95rem;
+  color: #15601d;
+}
+
+.field-row input:focus {
+  outline: none;
+  border-color: #6dfd8c;
+}
+
+.chat-messages {
+  min-height: 220px;
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.bubble {
+  border-radius: 12px;
+  padding: 0.65rem 0.9rem;
+  max-width: 92%;
+}
+
+.bubble--user {
+  align-self: flex-end;
+  background: #15601d;
+  color: #fff;
+}
+
+.bubble--assistant {
+  align-self: flex-start;
+  background: #e8f8eb;
+  border: 1px solid #bfe8c0;
+  color: #15601d;
+}
+
+.bubble-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.3rem;
+  opacity: 0.85;
+}
+
+.bubble--user .bubble-label {
+  color: #bfe8c0;
+}
+
+.bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.ticket-created-note {
+  margin: 0.65rem 0 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #0d4a14;
+}
+
+.ticket-offer {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #6dfd8c;
+  box-shadow: 0 4px 14px rgba(21, 96, 29, 0.08);
+}
+
+.ticket-offer-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #15601d;
+}
+
+.ticket-offer-meta {
+  margin: 0 0 0.65rem;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #15601d;
+}
+
+.ticket-offer-k {
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+.ticket-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.chat-attach-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.file-attach {
+  display: inline-flex;
+  align-self: flex-start;
+  cursor: pointer;
+}
+
+.file-attach-label {
+  display: inline-block;
+  border: 1px dashed #6dfd8c;
+  border-radius: 12px;
+  padding: 0.55rem 1rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #15601d;
+  background: #ccffd6;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.file-attach:hover .file-attach-label {
+  background: #bfe8c0;
+  border-color: #15601d;
+}
+
+.preview-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.preview-thumb {
+  max-height: 120px;
+  max-width: min(100%, 280px);
+  border-radius: 10px;
+  border: 1px solid #bfe8c0;
+  object-fit: contain;
+  background: #fff;
+}
+
+.bubble-image {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 220px;
+  border-radius: 10px;
+  margin-bottom: 0.5rem;
+  object-fit: contain;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.bubble--assistant .bubble-image {
+  border-color: #bfe8c0;
+}
+
+.chat-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+@media (min-width: 560px) {
+  .chat-input-row {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+}
+
+.chat-input-row textarea {
+  flex: 1;
+  width: 100%;
+  border: 1px solid #bfe8c0;
+  border-radius: 12px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: #15601d;
+  resize: vertical;
+  min-height: 52px;
+}
+
+.chat-input-row textarea:focus {
+  outline: none;
+  border-color: #6dfd8c;
+}
+
+button.btn-primary {
+  border: none;
+  border-radius: 999px;
+  padding: 0.65rem 1.35rem;
+  background: #6dfd8c;
+  color: #15601d;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+button.btn-primary:hover:not(:disabled) {
+  background: #5ae87a;
+}
+
+button.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.btn-secondary {
+  border: none;
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  background: #bfe8c0;
+  color: #15601d;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.error-banner {
+  background: #ffebee;
+  color: #b71c1c;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.warning-banner {
+  background: #fff8e1;
+  color: #5d4037;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid #ffe082;
+}
+
+.tickets-table-wrap {
+  overflow-x: auto;
+}
+
+table.tickets {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+table.tickets th,
+table.tickets td {
+  border-bottom: 1px solid #bfe8c0;
+  padding: 0.5rem 0.45rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+table.tickets th {
+  color: #15601d;
+  font-weight: 700;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge--abierto {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.badge--critica {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.badge--alta {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.badge--media {
+  background: #fffde7;
+  color: #f9a825;
+}
+
+.badge--baja {
+  background: #f1f8e9;
+  color: #558b2f;
+}
+
+.kb-sla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.kb-sla label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #15601d;
+}
+
+.kb-sla input {
+  border: 1px solid #bfe8c0;
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+}
+
+.kb-entry {
+  border: 1px dashed #bfe8c0;
+  border-radius: 12px;
+  padding: 0.85rem;
+  margin-bottom: 0.75rem;
+  background: rgba(204, 255, 214, 0.25);
+}
+
+.kb-entry header {
+  background: transparent;
+  color: #15601d;
+  padding: 0;
+  margin-bottom: 0.5rem;
+}
+
+.kb-entry input,
+.kb-entry textarea {
+  width: 100%;
+  border: 1px solid #bfe8c0;
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  font-family: inherit;
+  font-size: 0.88rem;
+  margin-bottom: 0.45rem;
+  color: #15601d;
+}
+
+.kb-entry textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.kb-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.empty-state {
+  margin: 0;
+  color: #15601d;
+  opacity: 0.75;
+  font-size: 0.92rem;
+}

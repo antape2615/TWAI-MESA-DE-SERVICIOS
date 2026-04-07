@@ -1,0 +1,19 @@
+{
+  "name": "twai-mesa-servicios",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "server"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w mesa-servicios-server\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w frontend && npm run build -w mesa-servicios-server",
+    "start": "npm run start -w mesa-servicios-server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
