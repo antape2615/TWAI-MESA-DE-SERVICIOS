@@ -10,7 +10,8 @@ services:
     region: oregon
     plan: free
     branch: main
-    buildCommand: npm install && npm run build
+    # Sin esto, con NODE_ENV=production npm omite devDependencies y falla el build de Vite/TypeScript.
+    buildCommand: NPM_CONFIG_PRODUCTION=false npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
