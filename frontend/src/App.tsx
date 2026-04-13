@@ -13,6 +13,10 @@ import {
   type KnowledgeEntry,
   type Ticket,
 } from './api'
+import { FAQ_ITEMS, promptFromFaq } from './faqData'
+
+/** Pestaña "Parámetros": oculta hasta definir acceso por usuario/rol */
+const SHOW_KNOWLEDGE_TAB = false
 
 type Tab = 'chat' | 'tickets' | 'knowledge'
 
@@ -171,9 +175,37 @@ function ChatSection({
       <h2 id="chat-heading">Asistente de soporte</h2>
       <p className="hint">
         Describa el error o adjunte una captura (botón o pegar con Ctrl+V / Cmd+V en el cuadro de texto).
-        El asistente analiza la imagen con Azure OpenAI, usa la base de conocimiento y, si hace falta,
-        pedirá captura si hace falta. Si propone ticket, use los botones para confirmar la creación.
+        El asistente analiza la imagen con Azure OpenAI y la base de conocimiento del servidor. Si propone
+        ticket, use los botones para confirmar la creación.
       </p>
+      <div className="faq-block" aria-labelledby="faq-heading">
+        <h3 id="faq-heading" className="faq-block-title">
+          Consultas frecuentes
+        </h3>
+        <p className="faq-block-intro">
+          Guía basada en <span className="faq-source">Consulta Soporte.xlsx</span>. Despliegue una entrada y
+          use &quot;Preguntar al asistente&quot; para enviar el texto al chat.
+        </p>
+        <div className="faq-accordion">
+          {FAQ_ITEMS.map((item) => (
+            <details key={item.id} className="faq-item">
+              <summary className="faq-summary">{item.title}</summary>
+              <p className="faq-category">{item.category}</p>
+              <div className="faq-content">{item.content}</div>
+              <button
+                type="button"
+                className="btn-secondary faq-to-chat"
+                onClick={() => {
+                  setInput(promptFromFaq(item))
+                  setError(null)
+                }}
+              >
+                Preguntar al asistente
+              </button>
+            </details>
+          ))}
+        </div>
+      </div>
       {error ? <div className="error-banner">{error}</div> : null}
       {mailNotice ? <div className="warning-banner">{mailNotice}</div> : null}
       <div className="field-row">
@@ -544,6 +576,10 @@ function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [userEmail, setUserEmail] = useState('')
 
+  useEffect(() => {
+    if (!SHOW_KNOWLEDGE_TAB && tab === 'knowledge') setTab('chat')
+  }, [tab])
+
   return (
     <div className="app-shell">
       <header>
@@ -553,7 +589,7 @@ function App() {
             <h1>Soporte con asistente inteligente</h1>
             <p className="subtitle">
               Converse sobre errores e incidencias; obtenga soluciones guiadas o apertura de tickets con
-              ANS definido. Las respuestas automáticas se parametrizan en la pestaña correspondiente.
+              ANS definido. Use las consultas frecuentes en el chat como referencia rápida.
             </p>
           </div>
           <nav className="tabs" aria-label="Secciones">
@@ -571,13 +607,15 @@ function App() {
             >
               Tickets
             </button>
-            <button
-              type="button"
-              className={tab === 'knowledge' ? 'active' : ''}
-              onClick={() => setTab('knowledge')}
-            >
-              Parámetros
-            </button>
+            {SHOW_KNOWLEDGE_TAB ? (
+              <button
+                type="button"
+                className={tab === 'knowledge' ? 'active' : ''}
+                onClick={() => setTab('knowledge')}
+              >
+                Parámetros
+              </button>
+            ) : null}
           </nav>
         </div>
       </header>
@@ -586,7 +624,7 @@ function App() {
           <ChatSection userEmail={userEmail} onUserEmail={setUserEmail} />
         ) : null}
         {tab === 'tickets' ? <TicketsSection /> : null}
-        {tab === 'knowledge' ? <KnowledgeSection /> : null}
+        {SHOW_KNOWLEDGE_TAB && tab === 'knowledge' ? <KnowledgeSection /> : null}
       </main>
     </div>
   )
