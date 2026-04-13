@@ -30,10 +30,12 @@ function ChatSection({
   userEmail,
   onUserEmail,
   ticketsFromPortal,
+  helpdeskDeepLink,
 }: {
   userEmail: string
   onUserEmail: (v: string) => void
   ticketsFromPortal: boolean
+  helpdeskDeepLink: boolean
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -111,6 +113,7 @@ function ChatSection({
           content: res.message,
           ...(res.ticketDraft ? { ticketDraft: res.ticketDraft } : {}),
           ...(res.ticketId ? { ticketCreatedId: res.ticketId } : {}),
+          ...(res.helpdeskUrl ? { helpdeskUrl: res.helpdeskUrl } : {}),
         },
       ])
       if (res.ticketId && res.email && !res.email.sent) {
@@ -178,7 +181,9 @@ function ChatSection({
         El asistente usa las guías oficiales de soporte cuando aplica.{' '}
         {ticketsFromPortal
           ? 'Si se ofrece un borrador de ticket, confirme con los botones.'
-          : 'Para registrar un caso en mesa de ayuda, el asistente le dará una plantilla para copiar y pegar en HelpDesk (no se crean tickets desde aquí).'}
+          : helpdeskDeepLink
+            ? 'Para HelpDesk, el asistente puede generar un enlace a Power Apps con datos y una plantilla para copiar (no se crean tickets desde aquí).'
+            : 'Para registrar un caso en mesa de ayuda, el asistente le dará una plantilla para copiar y pegar en HelpDesk (no se crean tickets desde aquí).'}
       </p>
       {error ? <div className="error-banner">{error}</div> : null}
       {mailNotice ? <div className="warning-banner">{mailNotice}</div> : null}
@@ -213,6 +218,18 @@ function ChatSection({
                 />
               ) : null}
               <p>{m.content}</p>
+              {!ticketsFromPortal && m.helpdeskUrl ? (
+                <div className="helpdesk-open-wrap">
+                  <a
+                    className="btn-primary helpdesk-open-btn"
+                    href={m.helpdeskUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Abrir HelpDesk (Power Apps)
+                  </a>
+                </div>
+              ) : null}
               {ticketsFromPortal && m.ticketCreatedId ? (
                 <p className="ticket-created-note">
                   Ticket <strong>{m.ticketCreatedId}</strong> creado.
@@ -485,6 +502,7 @@ function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [userEmail, setUserEmail] = useState('')
   const [ticketsFromPortal, setTicketsFromPortal] = useState(false)
+  const [helpdeskDeepLink, setHelpdeskDeepLink] = useState(false)
 
   useEffect(() => {
     if (!SHOW_KNOWLEDGE_TAB && tab === 'knowledge') setTab('chat')
@@ -492,8 +510,14 @@ function App() {
 
   useEffect(() => {
     void fetchAppConfig()
-      .then((c) => setTicketsFromPortal(c.ticketsFromPortal))
-      .catch(() => setTicketsFromPortal(false))
+      .then((c) => {
+        setTicketsFromPortal(c.ticketsFromPortal)
+        setHelpdeskDeepLink(c.helpdeskDeepLink)
+      })
+      .catch(() => {
+        setTicketsFromPortal(false)
+        setHelpdeskDeepLink(false)
+      })
   }, [])
 
   return (
@@ -508,7 +532,9 @@ function App() {
               correspondan.
               {ticketsFromPortal
                 ? ' Podrá orientarle en tickets con ANS definido desde esta aplicación.'
-                : ' El registro formal del caso es en HelpDesk: el asistente le dará una plantilla para copiar y pegar.'}
+                : helpdeskDeepLink
+                  ? ' El registro en HelpDesk puede abrirse con enlace desde el chat y plantilla para copiar.'
+                  : ' El registro formal del caso es en HelpDesk: el asistente le dará una plantilla para copiar y pegar.'}
             </p>
           </div>
           {SHOW_KNOWLEDGE_TAB ? (
@@ -537,6 +563,7 @@ function App() {
             userEmail={userEmail}
             onUserEmail={setUserEmail}
             ticketsFromPortal={ticketsFromPortal}
+            helpdeskDeepLink={helpdeskDeepLink}
           />
         ) : null}
         {SHOW_KNOWLEDGE_TAB && tab === 'knowledge' ? <KnowledgeSection /> : null}

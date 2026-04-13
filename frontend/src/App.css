@@ -218,6 +218,16 @@ main {
   align-items: center;
 }
 
+.helpdesk-open-wrap {
+  margin-top: 0.75rem;
+}
+
+a.helpdesk-open-btn {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

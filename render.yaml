@@ -29,6 +29,9 @@ services:
         value: angiepena@cbit-online.com
       - key: TICKETS_FROM_PORTAL_ENABLED
         value: "false"
+      # URL play de HelpDesk (Power Apps); habilita enlace profundo + herramienta open_helpdesk_link
+      - key: HELPDESK_POWERAPPS_URL
+        sync: false
       # Opcional: correo (Resend o SMTP). Si no se definen, el ticket se crea igual.
       - key: RESEND_API_KEY
         sync: false

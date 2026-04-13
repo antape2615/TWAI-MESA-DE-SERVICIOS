@@ -16,6 +16,8 @@ export type ChatMessage = {
   ticketDraft?: TicketDraft
   /** Tras confirmar desde la UI */
   ticketCreatedId?: string
+  /** Enlace Power Apps HelpDesk con parámetros (si el servidor lo generó) */
+  helpdeskUrl?: string
 }
 
 export type KnowledgeEntry = {
@@ -51,6 +53,8 @@ export type EmailSendResult = {
 
 export type AppConfig = {
   ticketsFromPortal: boolean
+  /** True si HELPDESK_POWERAPPS_URL está definida (enlace profundo disponible) */
+  helpdeskDeepLink: boolean
 }
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -78,6 +82,7 @@ export type ChatApiResponse = {
   ticketId?: string
   ticketDraft?: TicketDraft
   email?: EmailSendResult
+  helpdeskUrl?: string
 }
 
 export async function postChat(

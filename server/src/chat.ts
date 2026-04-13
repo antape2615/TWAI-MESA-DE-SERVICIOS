@@ -8,7 +8,12 @@ import {
 import { createTicket } from './tickets.js'
 import { sendTicketCreatedEmail, type EmailSendResult } from './email.js'
 import { ticketsFromPortalEnabled } from './features.js'
-import { helpdeskTemplateForPrompt } from './helpdeskTemplate.js'
+import {
+  buildPowerAppsDeepLink,
+  hasHelpdeskPowerAppsUrl,
+  helpdeskTemplateForPrompt,
+  parseHelpdeskLinkArgs,
+} from './helpdeskTemplate.js'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
 export type TicketDraftPayload = {
@@ -65,6 +70,36 @@ const createTicketTool = {
   },
 }
 
+const helpdeskLinkParams = {
+  type: 'object',
+  properties: {
+    titulo: { type: 'string', description: 'Título breve del incidente' },
+    descripcion: {
+      type: 'string',
+      description: 'Descripción del problema y pasos probados',
+    },
+    categoria: { type: 'string', description: 'Categoría coherente con HelpDesk' },
+    solicitado_por: {
+      type: 'string',
+      description: 'Correo o nombre de quien solicita',
+    },
+    numero_contacto: { type: 'string' },
+    pais: { type: 'string' },
+    departamento: { type: 'string' },
+    torre: { type: 'string' },
+  },
+} as const
+
+const openHelpdeskLinkTool = {
+  type: 'function' as const,
+  function: {
+    name: 'open_helpdesk_link',
+    description:
+      'Genera la URL de Power Apps HelpDesk con parámetros en el query string para precargar el formulario Nuevo Ticket. Úsala cuando convenga escalar a HelpDesk; rellena los campos conocidos del contexto (deja vacíos los desconocidos). Tras ejecutarla, incluye en tu mensaje el enlace para el usuario. Nombres de parámetro en la URL: Titulo, Descripcion, Categoria, SolicitadoPor, NumeroContacto, Pais, Departamento, Torre (la app canvas debe leerlos con Param).',
+    parameters: helpdeskLinkParams,
+  },
+}
+
 function getClient(): OpenAI {
   const endpoint = (process.env.AZURE_OPENAI_ENDPOINT ?? '').replace(/\/$/, '')
   const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_NAME
@@ -111,6 +146,7 @@ export async function runChat(params: {
   ticketId?: string
   ticketDraft?: TicketDraftPayload
   email?: EmailSendResult
+  helpdeskUrl?: string
 }> {
   const knowledge = await readKnowledge()
   const kbBlock = knowledgeToPromptBlock(knowledge)
@@ -119,19 +155,25 @@ export async function runChat(params: {
   const faqBlock = faqsToPromptBlock(relevantFaqs)
   const portalTickets = ticketsFromPortalEnabled()
   const templateBlock = helpdeskTemplateForPrompt()
+  const helpdeskDeepLink = hasHelpdeskPowerAppsUrl()
 
   const ticketPolicyPortal = `Cuando haga falta escalamiento o un ticket, usa por defecto la herramienta **propose_ticket**: el usuario confirmará con el botón «Sí, generar ticket» en la interfaz. Explica brevemente que puede pulsar el botón para crear el ticket.
 Usa **create_ticket** solo si el usuario escribió de forma explícita que quiere crear el ticket ya en este mensaje (p. ej. confirma sin ambigüedad tras haber visto la propuesta).`
 
-  const ticketPolicyHelpdesk = `NO hay herramientas de ticket en esta aplicación: la creación desde el portal está desactivada.
-Cuando convenga escalamiento o registrar el caso en mesa de ayuda, explica con claridad que debe usar el **HelpDesk Periferia** (formulario «Nuevo Ticket»).
-Incluye SIEMPRE al final de tu respuesta un bloque listo para **copiar y pegar** con la siguiente plantilla, rellenando con lo que sepas del caso (deja «[por completar]» donde no tengas dato). No inventes correos, torre o departamento; usa marcadores si aplica.
+  const helpdeskLinkInstruction = helpdeskDeepLink
+    ? `
+Cuando convenga escalar a HelpDesk, llama primero a la herramienta **open_helpdesk_link** con los campos que puedas inferir (titulo, descripcion, categoria, solicitado_por, numero_contacto, pais, departamento, torre). Luego, en tu respuesta al usuario, incluye el enlace devuelto y la plantilla de texto siguiente.`
+    : ''
+
+  const ticketPolicyHelpdesk = `NO hay creación de tickets en este portal: está desactivada.
+Cuando convenga escalamiento o registrar el caso en mesa de ayuda, indica que debe usar **HelpDesk Periferia** (Power Apps — «Nuevo Ticket»).${helpdeskLinkInstruction}
+Incluye SIEMPRE al final un bloque listo para **copiar y pegar** con la siguiente plantilla, rellenando con lo que sepas (deja «[por completar]» donde falte). No inventes datos sensibles; usa marcadores si aplica.
 
 --- Plantilla HelpDesk (copiar desde aquí) ---
 ${templateBlock}
 --- Fin plantilla ---
 
-Puedes mencionar de forma breve el ANS referencial según la gravedad usando la tabla de la base, pero el registro oficial es en HelpDesk.`
+Puedes mencionar de forma breve el ANS referencial según la gravedad usando la tabla de la base; el registro oficial es en HelpDesk.`
 
   const systemParts = [
     `Eres el asistente de Mesa de Servicios de Periferia. Idioma: español.
@@ -158,6 +200,9 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
   let lastTicketId: string | undefined
   let lastTicketDraft: TicketDraftPayload | undefined
   let lastEmailResult: EmailSendResult | undefined
+  let lastHelpdeskUrl: string | undefined
+
+  const toolsHelpdeskOnly = !portalTickets && helpdeskDeepLink ? [openHelpdeskLinkTool] : undefined
 
   for (let round = 0; round < 8; round++) {
     const completion = portalTickets
@@ -168,11 +213,19 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
           tool_choice: 'auto',
           temperature: 0.4,
         })
-      : await client.chat.completions.create({
-          model: deployment,
-          messages,
-          temperature: 0.4,
-        })
+      : toolsHelpdeskOnly
+        ? await client.chat.completions.create({
+            model: deployment,
+            messages,
+            tools: toolsHelpdeskOnly,
+            tool_choice: 'auto',
+            temperature: 0.4,
+          })
+        : await client.chat.completions.create({
+            model: deployment,
+            messages,
+            temperature: 0.4,
+          })
 
     const choice = completion.choices[0]
     const msg = choice?.message
@@ -254,6 +307,35 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
           continue
         }
 
+        if (name === 'open_helpdesk_link') {
+          const fields = parseHelpdeskLinkArgs(args)
+          const url = buildPowerAppsDeepLink(fields)
+          if (!url) {
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: JSON.stringify({
+                ok: false,
+                error: 'HELPDESK_POWERAPPS_URL no está configurada en el servidor',
+              }),
+            })
+            continue
+          }
+          lastHelpdeskUrl = url
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              ok: true,
+              url,
+              campos_usados: fields,
+              instruction:
+                'Incluye este URL en tu respuesta. El usuario verá también un botón en la app si el cliente lo soporta.',
+            }),
+          })
+          continue
+        }
+
         messages.push({
           role: 'tool',
           tool_call_id: call.id,
@@ -263,12 +345,18 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
       continue
     }
 
-    const text = msg.content?.trim() || ''
+    const rawText = msg.content?.trim() ?? ''
+    const text =
+      rawText ||
+      (lastHelpdeskUrl
+        ? 'Puede abrir HelpDesk con el enlace indicado y completar los campos que falten.'
+        : '')
     return {
       message: text,
       ticketId: lastTicketId,
       ticketDraft: lastTicketDraft,
       ...(lastEmailResult !== undefined ? { email: lastEmailResult } : {}),
+      ...(lastHelpdeskUrl ? { helpdeskUrl: lastHelpdeskUrl } : {}),
     }
   }
 
@@ -276,5 +364,6 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
     message: portalTickets
       ? 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o use HelpDesk para registrar el caso.'
       : 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o registre el caso en HelpDesk con la plantilla que le indique el asistente.',
+    ...(lastHelpdeskUrl ? { helpdeskUrl: lastHelpdeskUrl } : {}),
   }
 }

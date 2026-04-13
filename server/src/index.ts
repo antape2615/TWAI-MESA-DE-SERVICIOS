@@ -7,6 +7,7 @@ import cors from 'cors'
 import { z } from 'zod'
 import { runChat } from './chat.js'
 import { ticketsFromPortalEnabled } from './features.js'
+import { hasHelpdeskPowerAppsUrl } from './helpdeskTemplate.js'
 import { createTicket, listTickets } from './tickets.js'
 import { logEmailStartupHint, sendTicketCreatedEmail } from './email.js'
 import { readKnowledge, writeKnowledge, type KnowledgeData } from './knowledge.js'
@@ -21,7 +22,10 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.get('/api/config', (_req, res) => {
-  res.json({ ticketsFromPortal: ticketsFromPortalEnabled() })
+  res.json({
+    ticketsFromPortal: ticketsFromPortalEnabled(),
+    helpdeskDeepLink: hasHelpdeskPowerAppsUrl(),
+  })
 })
 
 app.get('/api/tickets', async (_req, res) => {
