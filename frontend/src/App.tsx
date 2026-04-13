@@ -183,8 +183,9 @@ function ChatSection({
           Consultas frecuentes
         </h3>
         <p className="faq-block-intro">
-          Guía basada en <span className="faq-source">Consulta Soporte.xlsx</span>. Despliegue una entrada y
-          use &quot;Preguntar al asistente&quot; para enviar el texto al chat.
+          Guía basada en <span className="faq-source">Consulta Soporte.xlsx</span>. Puede escribir libremente en el
+          chat: el asistente aplica la misma guía cuando detecta un tema relacionado. También puede desplegar una
+          entrada y usar &quot;Preguntar al asistente&quot; para copiar el texto al mensaje.
         </p>
         <div className="faq-accordion">
           {FAQ_ITEMS.map((item) => (

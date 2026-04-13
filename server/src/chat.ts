@@ -1,5 +1,10 @@
 import OpenAI from 'openai'
 import { readKnowledge, knowledgeToPromptBlock } from './knowledge.js'
+import {
+  collectUserText,
+  selectRelevantFaqs,
+  faqsToPromptBlock,
+} from './faqMatch.js'
 import { createTicket } from './tickets.js'
 import { sendTicketCreatedEmail, type EmailSendResult } from './email.js'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
@@ -107,18 +112,27 @@ export async function runChat(params: {
 }> {
   const knowledge = await readKnowledge()
   const kbBlock = knowledgeToPromptBlock(knowledge)
-  const system: ChatCompletionMessageParam = {
-    role: 'system',
-    content: `Eres el asistente de Mesa de Servicios de Periferia. Idioma: español.
-Sé breve y empático. Primero intenta resolver con la base de conocimiento siguiente.
+  const userBlob = collectUserText(params.messages)
+  const relevantFaqs = await selectRelevantFaqs(userBlob, 3)
+  const faqBlock = faqsToPromptBlock(relevantFaqs)
+
+  const systemParts = [
+    `Eres el asistente de Mesa de Servicios de Periferia. Idioma: español.
+Sé breve y empático. Si en tu contexto aparecen **FAQ oficiales** y la consulta del usuario encaja con ese tema, priorízalas y respóndele de forma conversacional (puedes resumir o usar pasos en lista) sin contradecir esa guía.
+Para el resto, usa la base de conocimiento parametrizada que viene después de las FAQ (si las hay).
 Si el usuario envía una imagen o captura, analízala (texto visible, códigos de error, ventanas) y propón solución concreta.
 Cuando el problema parezca un error en pantalla, mensaje del sistema, código o interfaz y aún NO conste ninguna imagen en los mensajes del usuario sobre ese incidente, pide amablemente una captura de pantalla antes de proponer ticket; explica que puede usar «Captura del error» o pegar con Ctrl+V. Si el usuario indica que no puede adjuntar imagen, continúa con lo que tengas.
 Cuando haga falta escalamiento o un ticket, usa por defecto la herramienta **propose_ticket**: el usuario confirmará con el botón «Sí, generar ticket» en la interfaz. Explica brevemente que puede pulsar el botón para crear el ticket.
-Usa **create_ticket** solo si el usuario escribió de forma explícita que quieres crear el ticket ya en este mensaje (p. ej. confirma sin ambigüedad tras haber visto la propuesta).
+Usa **create_ticket** solo si el usuario escribió de forma explícita que quiere crear el ticket ya en este mensaje (p. ej. confirma sin ambigüedad tras haber visto la propuesta).
 Indica el ANS (horas de primera respuesta) según la prioridad usando la tabla de la base.
-No inventes datos de sistemas internos; si no sabes, propón ticket o pide más detalle.
+No inventes datos de sistemas internos; si no sabes, propón ticket o pide más detalle.`,
+  ]
+  if (faqBlock) systemParts.push(faqBlock)
+  systemParts.push(kbBlock)
 
-${kbBlock}`,
+  const system: ChatCompletionMessageParam = {
+    role: 'system',
+    content: systemParts.join('\n\n'),
   }
 
   const client = getClient()
