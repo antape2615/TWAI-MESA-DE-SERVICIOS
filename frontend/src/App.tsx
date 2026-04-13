@@ -4,7 +4,6 @@ import {
   postChat,
   fileToImagePayload,
   createTicketConfirm,
-  fetchTickets,
   fetchKnowledge,
   saveKnowledge,
   fetchAppConfig,
@@ -12,13 +11,12 @@ import {
   type TicketDraft,
   type KnowledgePayload,
   type KnowledgeEntry,
-  type Ticket,
 } from './api'
 
 /** Pestaña "Parámetros": oculta hasta definir acceso por usuario/rol */
 const SHOW_KNOWLEDGE_TAB = false
 
-type Tab = 'chat' | 'tickets' | 'knowledge'
+type Tab = 'chat' | 'knowledge'
 
 function priorityClass(p: string): string {
   if (p === 'critica') return 'badge badge--critica'
@@ -308,83 +306,6 @@ function ChatSection({
   )
 }
 
-function TicketsSection({ ticketsFromPortal }: { ticketsFromPortal: boolean }) {
-  const [tickets, setTickets] = useState<Ticket[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { tickets: t } = await fetchTickets()
-      setTickets(t)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  return (
-    <section className="panel" aria-labelledby="tickets-heading">
-      <h2 id="tickets-heading">Tickets</h2>
-      {!ticketsFromPortal ? (
-        <p className="hint" style={{ fontWeight: 600 }}>
-          El alta de casos es en <strong>HelpDesk</strong>, usando la plantilla que le proporciona el asistente en el
-          chat. Esta lista solo muestra registros previos si los hubiera.
-        </p>
-      ) : (
-        <p className="hint">Listado de tickets generados desde el chat.</p>
-      )}
-      {error ? <div className="error-banner">{error}</div> : null}
-      <div className="kb-actions" style={{ marginBottom: '0.75rem' }}>
-        <button type="button" className="btn-secondary" onClick={() => void load()} disabled={loading}>
-          {loading ? 'Actualizando…' : 'Actualizar'}
-        </button>
-      </div>
-      {tickets.length === 0 && !loading ? (
-        <p className="empty-state">Aún no hay tickets.</p>
-      ) : (
-        <div className="tickets-table-wrap">
-          <table className="tickets">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Título</th>
-                <th>Prioridad</th>
-                <th>ANS (h)</th>
-                <th>Estado</th>
-                <th>Creado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.id}</td>
-                  <td>{t.title}</td>
-                  <td>
-                    <span className={priorityClass(t.priority)}>{t.priority}</span>
-                  </td>
-                  <td>{t.ansHours}</td>
-                  <td>
-                    <span className="badge badge--abierto">{t.status}</span>
-                  </td>
-                  <td>{new Date(t.createdAt).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  )
-}
-
 const emptyEntry = (): KnowledgeEntry => ({
   id: `kb-${Date.now()}`,
   keywords: [],
@@ -590,22 +511,15 @@ function App() {
                 : ' El registro formal del caso es en HelpDesk: el asistente le dará una plantilla para copiar y pegar.'}
             </p>
           </div>
-          <nav className="tabs" aria-label="Secciones">
-            <button
-              type="button"
-              className={tab === 'chat' ? 'active' : ''}
-              onClick={() => setTab('chat')}
-            >
-              Chat
-            </button>
-            <button
-              type="button"
-              className={tab === 'tickets' ? 'active' : ''}
-              onClick={() => setTab('tickets')}
-            >
-              Tickets
-            </button>
-            {SHOW_KNOWLEDGE_TAB ? (
+          {SHOW_KNOWLEDGE_TAB ? (
+            <nav className="tabs" aria-label="Secciones">
+              <button
+                type="button"
+                className={tab === 'chat' ? 'active' : ''}
+                onClick={() => setTab('chat')}
+              >
+                Chat
+              </button>
               <button
                 type="button"
                 className={tab === 'knowledge' ? 'active' : ''}
@@ -613,8 +527,8 @@ function App() {
               >
                 Parámetros
               </button>
-            ) : null}
-          </nav>
+            </nav>
+          ) : null}
         </div>
       </header>
       <main>
@@ -625,7 +539,6 @@ function App() {
             ticketsFromPortal={ticketsFromPortal}
           />
         ) : null}
-        {tab === 'tickets' ? <TicketsSection ticketsFromPortal={ticketsFromPortal} /> : null}
         {SHOW_KNOWLEDGE_TAB && tab === 'knowledge' ? <KnowledgeSection /> : null}
       </main>
     </div>
