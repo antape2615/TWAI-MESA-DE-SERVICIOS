@@ -13,7 +13,6 @@ import {
   type KnowledgeEntry,
   type Ticket,
 } from './api'
-import { FAQ_ITEMS, promptFromFaq } from './faqData'
 
 /** Pestaña "Parámetros": oculta hasta definir acceso por usuario/rol */
 const SHOW_KNOWLEDGE_TAB = false
@@ -175,38 +174,10 @@ function ChatSection({
       <h2 id="chat-heading">Asistente de soporte</h2>
       <p className="hint">
         Describa el error o adjunte una captura (botón o pegar con Ctrl+V / Cmd+V en el cuadro de texto).
-        El asistente analiza la imagen con Azure OpenAI y la base de conocimiento del servidor. Si propone
-        ticket, use los botones para confirmar la creación.
+        El asistente usa las guías oficiales de soporte (incluida la base Consulta Soporte) cuando su consulta
+        encaja con esos temas, además de la base de conocimiento del servidor. Si propone ticket, confirme con los
+        botones.
       </p>
-      <div className="faq-block" aria-labelledby="faq-heading">
-        <h3 id="faq-heading" className="faq-block-title">
-          Consultas frecuentes
-        </h3>
-        <p className="faq-block-intro">
-          Guía basada en <span className="faq-source">Consulta Soporte.xlsx</span>. Puede escribir libremente en el
-          chat: el asistente aplica la misma guía cuando detecta un tema relacionado. También puede desplegar una
-          entrada y usar &quot;Preguntar al asistente&quot; para copiar el texto al mensaje.
-        </p>
-        <div className="faq-accordion">
-          {FAQ_ITEMS.map((item) => (
-            <details key={item.id} className="faq-item">
-              <summary className="faq-summary">{item.title}</summary>
-              <p className="faq-category">{item.category}</p>
-              <div className="faq-content">{item.content}</div>
-              <button
-                type="button"
-                className="btn-secondary faq-to-chat"
-                onClick={() => {
-                  setInput(promptFromFaq(item))
-                  setError(null)
-                }}
-              >
-                Preguntar al asistente
-              </button>
-            </details>
-          ))}
-        </div>
-      </div>
       {error ? <div className="error-banner">{error}</div> : null}
       {mailNotice ? <div className="warning-banner">{mailNotice}</div> : null}
       <div className="field-row">
@@ -589,8 +560,8 @@ function App() {
             <p className="eyebrow">Periferia · Mesa de servicios</p>
             <h1>Soporte con asistente inteligente</h1>
             <p className="subtitle">
-              Converse sobre errores e incidencias; obtenga soluciones guiadas o apertura de tickets con
-              ANS definido. Use las consultas frecuentes en el chat como referencia rápida.
+              Converse sobre errores e incidencias; el asistente aplicará las guías de Mesa de Servicios cuando
+              correspondan y podrá orientarle en tickets con ANS definido.
             </p>
           </div>
           <nav className="tabs" aria-label="Secciones">
