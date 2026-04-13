@@ -31,11 +31,13 @@ function ChatSection({
   onUserEmail,
   ticketsFromPortal,
   helpdeskDeepLink,
+  helpdeskPowerAppsUrl,
 }: {
   userEmail: string
   onUserEmail: (v: string) => void
   ticketsFromPortal: boolean
   helpdeskDeepLink: boolean
+  helpdeskPowerAppsUrl?: string
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -175,7 +177,19 @@ function ChatSection({
 
   return (
     <section className="panel" aria-labelledby="chat-heading">
-      <h2 id="chat-heading">Asistente de soporte</h2>
+      <div className="chat-panel-head">
+        <h2 id="chat-heading">Asistente de soporte</h2>
+        {helpdeskPowerAppsUrl ? (
+          <a
+            className="btn-secondary chat-to-helpdesk-btn"
+            href={helpdeskPowerAppsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Ir a HelpDesk
+          </a>
+        ) : null}
+      </div>
       <p className="hint">
         Describa el error o adjunte una captura (botón o pegar con Ctrl+V / Cmd+V en el cuadro de texto).
         El asistente usa las guías oficiales de soporte cuando aplica.{' '}
@@ -503,6 +517,7 @@ function App() {
   const [userEmail, setUserEmail] = useState('')
   const [ticketsFromPortal, setTicketsFromPortal] = useState(false)
   const [helpdeskDeepLink, setHelpdeskDeepLink] = useState(false)
+  const [helpdeskPowerAppsUrl, setHelpdeskPowerAppsUrl] = useState<string | undefined>()
 
   useEffect(() => {
     if (!SHOW_KNOWLEDGE_TAB && tab === 'knowledge') setTab('chat')
@@ -513,10 +528,12 @@ function App() {
       .then((c) => {
         setTicketsFromPortal(c.ticketsFromPortal)
         setHelpdeskDeepLink(c.helpdeskDeepLink)
+        setHelpdeskPowerAppsUrl(c.helpdeskPowerAppsUrl)
       })
       .catch(() => {
         setTicketsFromPortal(false)
         setHelpdeskDeepLink(false)
+        setHelpdeskPowerAppsUrl(undefined)
       })
   }, [])
 
@@ -564,6 +581,7 @@ function App() {
             onUserEmail={setUserEmail}
             ticketsFromPortal={ticketsFromPortal}
             helpdeskDeepLink={helpdeskDeepLink}
+            helpdeskPowerAppsUrl={helpdeskPowerAppsUrl}
           />
         ) : null}
         {SHOW_KNOWLEDGE_TAB && tab === 'knowledge' ? <KnowledgeSection /> : null}

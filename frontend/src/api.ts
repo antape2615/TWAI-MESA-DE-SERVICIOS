@@ -55,6 +55,8 @@ export type AppConfig = {
   ticketsFromPortal: boolean
   /** True si HELPDESK_POWERAPPS_URL está definida (enlace profundo disponible) */
   helpdeskDeepLink: boolean
+  /** URL play de HelpDesk para abrir la pantalla desde el chat */
+  helpdeskPowerAppsUrl?: string
 }
 
 async function parseJson<T>(res: Response): Promise<T> {

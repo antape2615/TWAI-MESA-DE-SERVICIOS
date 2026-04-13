@@ -38,6 +38,13 @@ export function hasHelpdeskPowerAppsUrl(): boolean {
   return Boolean(u && u.startsWith('http'))
 }
 
+/** URL base del reproductor HelpDesk (para botón «Ir a HelpDesk» en el chat). */
+export function getHelpdeskPowerAppsUrl(): string | null {
+  const u = process.env.HELPDESK_POWERAPPS_URL?.trim()
+  if (!u || !u.startsWith('http')) return null
+  return u
+}
+
 function paramName(internal: keyof HelpdeskLinkFields): string {
   const envKey = `HELPDESK_URL_PARAM_${String(internal).toUpperCase()}`
   const fromEnv = process.env[envKey]?.trim()
