@@ -7,6 +7,8 @@ import {
 } from './faqMatch.js'
 import { createTicket } from './tickets.js'
 import { sendTicketCreatedEmail, type EmailSendResult } from './email.js'
+import { ticketsFromPortalEnabled } from './features.js'
+import { helpdeskTemplateForPrompt } from './helpdeskTemplate.js'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
 export type TicketDraftPayload = {
@@ -115,17 +117,31 @@ export async function runChat(params: {
   const userBlob = collectUserText(params.messages)
   const relevantFaqs = await selectRelevantFaqs(userBlob, 3)
   const faqBlock = faqsToPromptBlock(relevantFaqs)
+  const portalTickets = ticketsFromPortalEnabled()
+  const templateBlock = helpdeskTemplateForPrompt()
+
+  const ticketPolicyPortal = `Cuando haga falta escalamiento o un ticket, usa por defecto la herramienta **propose_ticket**: el usuario confirmará con el botón «Sí, generar ticket» en la interfaz. Explica brevemente que puede pulsar el botón para crear el ticket.
+Usa **create_ticket** solo si el usuario escribió de forma explícita que quiere crear el ticket ya en este mensaje (p. ej. confirma sin ambigüedad tras haber visto la propuesta).`
+
+  const ticketPolicyHelpdesk = `NO hay herramientas de ticket en esta aplicación: la creación desde el portal está desactivada.
+Cuando convenga escalamiento o registrar el caso en mesa de ayuda, explica con claridad que debe usar el **HelpDesk Periferia** (formulario «Nuevo Ticket»).
+Incluye SIEMPRE al final de tu respuesta un bloque listo para **copiar y pegar** con la siguiente plantilla, rellenando con lo que sepas del caso (deja «[por completar]» donde no tengas dato). No inventes correos, torre o departamento; usa marcadores si aplica.
+
+--- Plantilla HelpDesk (copiar desde aquí) ---
+${templateBlock}
+--- Fin plantilla ---
+
+Puedes mencionar de forma breve el ANS referencial según la gravedad usando la tabla de la base, pero el registro oficial es en HelpDesk.`
 
   const systemParts = [
     `Eres el asistente de Mesa de Servicios de Periferia. Idioma: español.
 Sé breve y empático. Si en tu contexto aparecen **FAQ oficiales** y la consulta del usuario encaja con ese tema, priorízalas y respóndele de forma conversacional (puedes resumir o usar pasos en lista) sin contradecir esa guía.
 Para el resto, usa la base de conocimiento parametrizada que viene después de las FAQ (si las hay).
 Si el usuario envía una imagen o captura, analízala (texto visible, códigos de error, ventanas) y propón solución concreta.
-Cuando el problema parezca un error en pantalla, mensaje del sistema, código o interfaz y aún NO conste ninguna imagen en los mensajes del usuario sobre ese incidente, pide amablemente una captura de pantalla antes de proponer ticket; explica que puede usar «Captura del error» o pegar con Ctrl+V. Si el usuario indica que no puede adjuntar imagen, continúa con lo que tengas.
-Cuando haga falta escalamiento o un ticket, usa por defecto la herramienta **propose_ticket**: el usuario confirmará con el botón «Sí, generar ticket» en la interfaz. Explica brevemente que puede pulsar el botón para crear el ticket.
-Usa **create_ticket** solo si el usuario escribió de forma explícita que quiere crear el ticket ya en este mensaje (p. ej. confirma sin ambigüedad tras haber visto la propuesta).
-Indica el ANS (horas de primera respuesta) según la prioridad usando la tabla de la base.
-No inventes datos de sistemas internos; si no sabes, propón ticket o pide más detalle.`,
+Cuando el problema parezca un error en pantalla, mensaje del sistema, código o interfaz y aún NO conste ninguna imagen en los mensajes del usuario sobre ese incidente, pide amablemente una captura de pantalla antes de sugerir escalamiento; explica que puede usar «Captura del error» o pegar con Ctrl+V. Si el usuario indica que no puede adjuntar imagen, continúa con lo que tengas.
+${portalTickets ? ticketPolicyPortal : ticketPolicyHelpdesk}
+${portalTickets ? 'Indica el ANS (horas de primera respuesta) según la prioridad usando la tabla de la base.' : ''}
+No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta con la plantilla HelpDesk.`,
   ]
   if (faqBlock) systemParts.push(faqBlock)
   systemParts.push(kbBlock)
@@ -144,13 +160,19 @@ No inventes datos de sistemas internos; si no sabes, propón ticket o pide más 
   let lastEmailResult: EmailSendResult | undefined
 
   for (let round = 0; round < 8; round++) {
-    const completion = await client.chat.completions.create({
-      model: deployment,
-      messages,
-      tools: [proposeTicketTool, createTicketTool],
-      tool_choice: 'auto',
-      temperature: 0.4,
-    })
+    const completion = portalTickets
+      ? await client.chat.completions.create({
+          model: deployment,
+          messages,
+          tools: [proposeTicketTool, createTicketTool],
+          tool_choice: 'auto',
+          temperature: 0.4,
+        })
+      : await client.chat.completions.create({
+          model: deployment,
+          messages,
+          temperature: 0.4,
+        })
 
     const choice = completion.choices[0]
     const msg = choice?.message
@@ -251,7 +273,8 @@ No inventes datos de sistemas internos; si no sabes, propón ticket o pide más 
   }
 
   return {
-    message:
-      'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o abra un ticket desde el portal.',
+    message: portalTickets
+      ? 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o use HelpDesk para registrar el caso.'
+      : 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o registre el caso en HelpDesk con la plantilla que le indique el asistente.',
   }
 }

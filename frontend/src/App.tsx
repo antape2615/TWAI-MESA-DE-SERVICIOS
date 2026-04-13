@@ -7,6 +7,7 @@ import {
   fetchTickets,
   fetchKnowledge,
   saveKnowledge,
+  fetchAppConfig,
   type ChatMessage,
   type TicketDraft,
   type KnowledgePayload,
@@ -30,9 +31,11 @@ function priorityClass(p: string): string {
 function ChatSection({
   userEmail,
   onUserEmail,
+  ticketsFromPortal,
 }: {
   userEmail: string
   onUserEmail: (v: string) => void
+  ticketsFromPortal: boolean
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -174,14 +177,17 @@ function ChatSection({
       <h2 id="chat-heading">Asistente de soporte</h2>
       <p className="hint">
         Describa el error o adjunte una captura (botón o pegar con Ctrl+V / Cmd+V en el cuadro de texto).
-        El asistente usa las guías oficiales de soporte (incluida la base Consulta Soporte) cuando su consulta
-        encaja con esos temas, además de la base de conocimiento del servidor. Si propone ticket, confirme con los
-        botones.
+        El asistente usa las guías oficiales de soporte cuando aplica.{' '}
+        {ticketsFromPortal
+          ? 'Si se ofrece un borrador de ticket, confirme con los botones.'
+          : 'Para registrar un caso en mesa de ayuda, el asistente le dará una plantilla para copiar y pegar en HelpDesk (no se crean tickets desde aquí).'}
       </p>
       {error ? <div className="error-banner">{error}</div> : null}
       {mailNotice ? <div className="warning-banner">{mailNotice}</div> : null}
       <div className="field-row">
-        <label htmlFor="user-email">Correo (opcional, para el ticket)</label>
+        <label htmlFor="user-email">
+          {ticketsFromPortal ? 'Correo (opcional, para el ticket)' : 'Correo (opcional)'}
+        </label>
         <input
           id="user-email"
           type="email"
@@ -209,12 +215,15 @@ function ChatSection({
                 />
               ) : null}
               <p>{m.content}</p>
-              {m.ticketCreatedId ? (
+              {ticketsFromPortal && m.ticketCreatedId ? (
                 <p className="ticket-created-note">
                   Ticket <strong>{m.ticketCreatedId}</strong> creado.
                 </p>
               ) : null}
-              {m.role === 'assistant' && m.ticketDraft && !m.ticketCreatedId ? (
+              {ticketsFromPortal &&
+              m.role === 'assistant' &&
+              m.ticketDraft &&
+              !m.ticketCreatedId ? (
                 <div className="ticket-offer" role="group" aria-label="Confirmar ticket">
                   <p className="ticket-offer-title">¿Generar ticket con estos datos?</p>
                   <ul className="ticket-offer-meta">
@@ -299,7 +308,7 @@ function ChatSection({
   )
 }
 
-function TicketsSection() {
+function TicketsSection({ ticketsFromPortal }: { ticketsFromPortal: boolean }) {
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -324,7 +333,14 @@ function TicketsSection() {
   return (
     <section className="panel" aria-labelledby="tickets-heading">
       <h2 id="tickets-heading">Tickets</h2>
-      <p className="hint">Listado de tickets generados desde el chat o futuras integraciones.</p>
+      {!ticketsFromPortal ? (
+        <p className="hint" style={{ fontWeight: 600 }}>
+          El alta de casos es en <strong>HelpDesk</strong>, usando la plantilla que le proporciona el asistente en el
+          chat. Esta lista solo muestra registros previos si los hubiera.
+        </p>
+      ) : (
+        <p className="hint">Listado de tickets generados desde el chat.</p>
+      )}
       {error ? <div className="error-banner">{error}</div> : null}
       <div className="kb-actions" style={{ marginBottom: '0.75rem' }}>
         <button type="button" className="btn-secondary" onClick={() => void load()} disabled={loading}>
@@ -547,10 +563,17 @@ function KnowledgeSection() {
 function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [userEmail, setUserEmail] = useState('')
+  const [ticketsFromPortal, setTicketsFromPortal] = useState(false)
 
   useEffect(() => {
     if (!SHOW_KNOWLEDGE_TAB && tab === 'knowledge') setTab('chat')
   }, [tab])
+
+  useEffect(() => {
+    void fetchAppConfig()
+      .then((c) => setTicketsFromPortal(c.ticketsFromPortal))
+      .catch(() => setTicketsFromPortal(false))
+  }, [])
 
   return (
     <div className="app-shell">
@@ -561,7 +584,10 @@ function App() {
             <h1>Soporte con asistente inteligente</h1>
             <p className="subtitle">
               Converse sobre errores e incidencias; el asistente aplicará las guías de Mesa de Servicios cuando
-              correspondan y podrá orientarle en tickets con ANS definido.
+              correspondan.
+              {ticketsFromPortal
+                ? ' Podrá orientarle en tickets con ANS definido desde esta aplicación.'
+                : ' El registro formal del caso es en HelpDesk: el asistente le dará una plantilla para copiar y pegar.'}
             </p>
           </div>
           <nav className="tabs" aria-label="Secciones">
@@ -593,9 +619,13 @@ function App() {
       </header>
       <main>
         {tab === 'chat' ? (
-          <ChatSection userEmail={userEmail} onUserEmail={setUserEmail} />
+          <ChatSection
+            userEmail={userEmail}
+            onUserEmail={setUserEmail}
+            ticketsFromPortal={ticketsFromPortal}
+          />
         ) : null}
-        {tab === 'tickets' ? <TicketsSection /> : null}
+        {tab === 'tickets' ? <TicketsSection ticketsFromPortal={ticketsFromPortal} /> : null}
         {SHOW_KNOWLEDGE_TAB && tab === 'knowledge' ? <KnowledgeSection /> : null}
       </main>
     </div>

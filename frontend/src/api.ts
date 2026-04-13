@@ -49,6 +49,10 @@ export type EmailSendResult = {
   method?: 'resend' | 'smtp' | 'none'
 }
 
+export type AppConfig = {
+  ticketsFromPortal: boolean
+}
+
 async function parseJson<T>(res: Response): Promise<T> {
   const text = await res.text()
   if (!res.ok) {
@@ -62,6 +66,11 @@ async function parseJson<T>(res: Response): Promise<T> {
     throw new Error(msg)
   }
   return JSON.parse(text) as T
+}
+
+export async function fetchAppConfig(): Promise<AppConfig> {
+  const res = await fetch('/api/config')
+  return parseJson(res)
 }
 
 export type ChatApiResponse = {

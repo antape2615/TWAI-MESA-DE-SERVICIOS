@@ -6,6 +6,7 @@ import express from 'express'
 import cors from 'cors'
 import { z } from 'zod'
 import { runChat } from './chat.js'
+import { ticketsFromPortalEnabled } from './features.js'
 import { createTicket, listTickets } from './tickets.js'
 import { logEmailStartupHint, sendTicketCreatedEmail } from './email.js'
 import { readKnowledge, writeKnowledge, type KnowledgeData } from './knowledge.js'
@@ -17,6 +18,10 @@ app.use(express.json({ limit: '20mb' }))
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
+})
+
+app.get('/api/config', (_req, res) => {
+  res.json({ ticketsFromPortal: ticketsFromPortalEnabled() })
 })
 
 app.get('/api/tickets', async (_req, res) => {
@@ -40,6 +45,13 @@ const CreateTicketBodySchema = z.object({
 
 app.post('/api/tickets', async (req, res) => {
   try {
+    if (!ticketsFromPortalEnabled()) {
+      res.status(403).json({
+        error:
+          'La creación de tickets desde esta aplicación está deshabilitada. Use HelpDesk y la plantilla que le indique el asistente.',
+      })
+      return
+    }
     const parsed = CreateTicketBodySchema.safeParse(req.body)
     if (!parsed.success) {
       res.status(400).json({ error: 'Datos inválidos' })
