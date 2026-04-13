@@ -248,6 +248,26 @@ export function collectUserText(messages: ChatCompletionMessageParam[]): string 
   return parts.join('\n')
 }
 
+/** Texto del último mensaje de usuario (para enlace HelpDesk con título/descripción). */
+export function lastUserMessagePlainText(
+  messages: ChatCompletionMessageParam[],
+): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== 'user') continue
+    const c = m.content
+    if (typeof c === 'string') return c
+    if (Array.isArray(c)) {
+      const parts: string[] = []
+      for (const part of c) {
+        if (part.type === 'text' && 'text' in part) parts.push(part.text)
+      }
+      return parts.join('\n')
+    }
+  }
+  return ''
+}
+
 export function faqsToPromptBlock(items: FaqItem[]): string {
   if (!items.length) return ''
   const blocks = items.map(

@@ -89,6 +89,29 @@ export function buildPowerAppsDeepLink(fields: HelpdeskLinkFields): string | nul
   return url.toString()
 }
 
+/**
+ * Si el modelo no llamó a open_helpdesk_link, generamos igual la URL con título/descripción
+ * desde el último mensaje del usuario y el correo opcional (Power Apps lee Param(...)).
+ */
+export function buildFallbackDeepLink(
+  lastUserText: string,
+  userEmail?: string,
+): string | null {
+  if (!hasHelpdeskPowerAppsUrl()) return null
+  const raw = lastUserText.trim()
+  const firstLine = raw.split(/[\n\r]+/)[0]?.trim() ?? ''
+  const titulo =
+    (firstLine || raw).slice(0, 120).trim() || 'Consulta Mesa de servicios'
+  const descripcion =
+    raw.slice(0, MAX_DESCRIPCION) ||
+    '(Sin texto en el chat; complete el caso en HelpDesk.)'
+  return buildPowerAppsDeepLink({
+    titulo,
+    descripcion,
+    solicitado_por: userEmail?.trim() || undefined,
+  })
+}
+
 /** Normaliza argumentos JSON de la herramienta (snake_case). */
 export function parseHelpdeskLinkArgs(
   args: Record<string, unknown>,

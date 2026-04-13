@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { readKnowledge, knowledgeToPromptBlock } from './knowledge.js'
 import {
   collectUserText,
+  lastUserMessagePlainText,
   selectRelevantFaqs,
   faqsToPromptBlock,
 } from './faqMatch.js'
@@ -9,6 +10,7 @@ import { createTicket } from './tickets.js'
 import { sendTicketCreatedEmail, type EmailSendResult } from './email.js'
 import { ticketsFromPortalEnabled } from './features.js'
 import {
+  buildFallbackDeepLink,
   buildPowerAppsDeepLink,
   hasHelpdeskPowerAppsUrl,
   helpdeskTemplateForPrompt,
@@ -126,6 +128,23 @@ function priorityFromString(
   return 'media'
 }
 
+function resolveHelpdeskUrlForResponse(
+  toolUrl: string | undefined,
+  portalTickets: boolean,
+  helpdeskConfigured: boolean,
+  requestMessages: ChatCompletionMessageParam[],
+  userEmail?: string,
+): string | undefined {
+  if (portalTickets || !helpdeskConfigured) return undefined
+  if (toolUrl) return toolUrl
+  return (
+    buildFallbackDeepLink(
+      lastUserMessagePlainText(requestMessages),
+      userEmail,
+    ) ?? undefined
+  )
+}
+
 function parseTicketArgs(args: Record<string, unknown>): TicketDraftPayload {
   return {
     title: String(args.title ?? 'Sin título'),
@@ -167,6 +186,7 @@ Cuando convenga escalar a HelpDesk, llama primero a la herramienta **open_helpde
 
   const ticketPolicyHelpdesk = `NO hay creación de tickets en este portal: está desactivada.
 Cuando convenga escalamiento o registrar el caso en mesa de ayuda, indica que debe usar **HelpDesk Periferia** (Power Apps — «Nuevo Ticket»).${helpdeskLinkInstruction}
+El sistema **siempre** ofrece bajo la respuesta un botón con enlace a HelpDesk que ya lleva en la URL título, descripción y correo (si el usuario los puso); no depende solo de que llames a la herramienta.
 Incluye SIEMPRE al final un bloque listo para **copiar y pegar** con la siguiente plantilla, rellenando con lo que sepas (deja «[por completar]» donde falte). No inventes datos sensibles; usa marcadores si aplica.
 
 --- Plantilla HelpDesk (copiar desde aquí) ---
@@ -346,24 +366,39 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
     }
 
     const rawText = msg.content?.trim() ?? ''
+    const helpdeskUrl = resolveHelpdeskUrlForResponse(
+      lastHelpdeskUrl,
+      portalTickets,
+      helpdeskDeepLink,
+      params.messages,
+      params.userEmail,
+    )
     const text =
       rawText ||
-      (lastHelpdeskUrl
-        ? 'Puede abrir HelpDesk con el enlace indicado y completar los campos que falten.'
+      (helpdeskUrl
+        ? 'Puede abrir HelpDesk con el botón inferior; el enlace incluye su consulta y correo si los indicó.'
         : '')
     return {
       message: text,
       ticketId: lastTicketId,
       ticketDraft: lastTicketDraft,
       ...(lastEmailResult !== undefined ? { email: lastEmailResult } : {}),
-      ...(lastHelpdeskUrl ? { helpdeskUrl: lastHelpdeskUrl } : {}),
+      ...(helpdeskUrl ? { helpdeskUrl } : {}),
     }
   }
+
+  const helpdeskUrlFallback = resolveHelpdeskUrlForResponse(
+    lastHelpdeskUrl,
+    portalTickets,
+    helpdeskDeepLink,
+    params.messages,
+    params.userEmail,
+  )
 
   return {
     message: portalTickets
       ? 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o use HelpDesk para registrar el caso.'
       : 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o registre el caso en HelpDesk con la plantilla que le indique el asistente.',
-    ...(lastHelpdeskUrl ? { helpdeskUrl: lastHelpdeskUrl } : {}),
+    ...(helpdeskUrlFallback ? { helpdeskUrl: helpdeskUrlFallback } : {}),
   }
 }

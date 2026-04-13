@@ -240,7 +240,7 @@ function ChatSection({
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Abrir HelpDesk (Power Apps)
+                    Abrir HelpDesk (consulta y correo en el enlace)
                   </a>
                 </div>
               ) : null}
