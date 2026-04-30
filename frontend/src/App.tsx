@@ -27,17 +27,11 @@ function priorityClass(p: string): string {
 }
 
 function ChatSection({
-  userEmail,
-  onUserEmail,
   ticketsFromPortal,
   helpdeskDeepLink,
-  helpdeskPowerAppsUrl,
 }: {
-  userEmail: string
-  onUserEmail: (v: string) => void
   ticketsFromPortal: boolean
   helpdeskDeepLink: boolean
-  helpdeskPowerAppsUrl?: string
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -107,7 +101,7 @@ function ChatSection({
     setPendingFile(null)
     setLoading(true)
     try {
-      const res = await postChat(next, userEmail.trim() || undefined)
+      const res = await postChat(next)
       setMessages([
         ...next,
         {
@@ -128,7 +122,7 @@ function ChatSection({
     } finally {
       setLoading(false)
     }
-  }, [input, loading, messages, userEmail, pendingFile, previewUrl])
+  }, [input, loading, messages, pendingFile, previewUrl])
 
   const onConfirmTicket = useCallback(
     async (messageIndex: number, draft: TicketDraft) => {
@@ -136,10 +130,7 @@ function ChatSection({
       setConfirmingIndex(messageIndex)
       setError(null)
       try {
-        const { ticket, email } = await createTicketConfirm(
-          draft,
-          userEmail.trim() || undefined,
-        )
+        const { ticket, email } = await createTicketConfirm(draft)
         setMessages((prev) =>
           prev.map((msg, i) =>
             i === messageIndex
@@ -164,7 +155,7 @@ function ChatSection({
         setConfirmingIndex(null)
       }
     },
-    [confirmingIndex, userEmail],
+    [confirmingIndex],
   )
 
   const onDismissTicket = useCallback((messageIndex: number) => {
@@ -177,43 +168,18 @@ function ChatSection({
 
   return (
     <section className="panel" aria-labelledby="chat-heading">
-      <div className="chat-panel-head">
-        <h2 id="chat-heading">Asistente de soporte</h2>
-        {helpdeskPowerAppsUrl ? (
-          <a
-            className="btn-secondary chat-to-helpdesk-btn"
-            href={helpdeskPowerAppsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Ir a HelpDesk
-          </a>
-        ) : null}
-      </div>
+      <h2 id="chat-heading">Asistente de soporte</h2>
       <p className="hint">
         Describa el error o adjunte una captura (botón o pegar con Ctrl+V / Cmd+V en el cuadro de texto).
         El asistente usa las guías oficiales de soporte cuando aplica.{' '}
         {ticketsFromPortal
           ? 'Si se ofrece un borrador de ticket, confirme con los botones.'
           : helpdeskDeepLink
-            ? 'Para HelpDesk, el asistente puede generar un enlace a Power Apps con datos y una plantilla para copiar (no se crean tickets desde aquí).'
-            : 'Para registrar un caso en mesa de ayuda, el asistente le dará una plantilla para copiar y pegar en HelpDesk (no se crean tickets desde aquí).'}
+            ? 'Para escalar a HelpDesk puede usar el enlace que indique el asistente (no se crean tickets desde aquí).'
+            : 'Para registrar un caso en mesa de ayuda, el asistente le orientará hacia HelpDesk (no se crean tickets desde aquí).'}
       </p>
       {error ? <div className="error-banner">{error}</div> : null}
       {mailNotice ? <div className="warning-banner">{mailNotice}</div> : null}
-      <div className="field-row">
-        <label htmlFor="user-email">
-          {ticketsFromPortal ? 'Correo (opcional, para el ticket)' : 'Correo (opcional)'}
-        </label>
-        <input
-          id="user-email"
-          type="email"
-          value={userEmail}
-          onChange={(e) => onUserEmail(e.target.value)}
-          placeholder="usuario@empresa.com"
-          autoComplete="email"
-        />
-      </div>
       <div className="chat-messages">
         {messages.length === 0 ? (
           <p className="empty-state">Escriba su consulta para comenzar.</p>
@@ -231,16 +197,16 @@ function ChatSection({
                   alt="Captura del error"
                 />
               ) : null}
-              <p>{m.content}</p>
+              <p className="bubble-text">{m.content}</p>
               {!ticketsFromPortal && m.helpdeskUrl ? (
-                <div className="helpdesk-open-wrap">
+                <div className="helpdesk-panel">
                   <a
                     className="btn-primary helpdesk-open-btn"
                     href={m.helpdeskUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Abrir HelpDesk (consulta y correo en el enlace)
+                    Abrir HelpDesk en Power Apps (Nuevo ticket)
                   </a>
                 </div>
               ) : null}
@@ -514,10 +480,8 @@ function KnowledgeSection() {
 
 function App() {
   const [tab, setTab] = useState<Tab>('chat')
-  const [userEmail, setUserEmail] = useState('')
   const [ticketsFromPortal, setTicketsFromPortal] = useState(false)
   const [helpdeskDeepLink, setHelpdeskDeepLink] = useState(false)
-  const [helpdeskPowerAppsUrl, setHelpdeskPowerAppsUrl] = useState<string | undefined>()
 
   useEffect(() => {
     if (!SHOW_KNOWLEDGE_TAB && tab === 'knowledge') setTab('chat')
@@ -528,12 +492,10 @@ function App() {
       .then((c) => {
         setTicketsFromPortal(c.ticketsFromPortal)
         setHelpdeskDeepLink(c.helpdeskDeepLink)
-        setHelpdeskPowerAppsUrl(c.helpdeskPowerAppsUrl)
       })
       .catch(() => {
         setTicketsFromPortal(false)
         setHelpdeskDeepLink(false)
-        setHelpdeskPowerAppsUrl(undefined)
       })
   }, [])
 
@@ -550,8 +512,8 @@ function App() {
               {ticketsFromPortal
                 ? ' Podrá orientarle en tickets con ANS definido desde esta aplicación.'
                 : helpdeskDeepLink
-                  ? ' El registro en HelpDesk puede abrirse con enlace desde el chat y plantilla para copiar.'
-                  : ' El registro formal del caso es en HelpDesk: el asistente le dará una plantilla para copiar y pegar.'}
+                  ? ' El registro en HelpDesk puede abrirse con un enlace desde el chat cuando aplique.'
+                  : ' El registro formal del caso es en HelpDesk cuando el asistente lo indique.'}
             </p>
           </div>
           {SHOW_KNOWLEDGE_TAB ? (
@@ -576,13 +538,7 @@ function App() {
       </header>
       <main>
         {tab === 'chat' ? (
-          <ChatSection
-            userEmail={userEmail}
-            onUserEmail={setUserEmail}
-            ticketsFromPortal={ticketsFromPortal}
-            helpdeskDeepLink={helpdeskDeepLink}
-            helpdeskPowerAppsUrl={helpdeskPowerAppsUrl}
-          />
+          <ChatSection ticketsFromPortal={ticketsFromPortal} helpdeskDeepLink={helpdeskDeepLink} />
         ) : null}
         {SHOW_KNOWLEDGE_TAB && tab === 'knowledge' ? <KnowledgeSection /> : null}
       </main>

@@ -13,7 +13,6 @@ import {
   buildFallbackDeepLink,
   buildPowerAppsDeepLink,
   hasHelpdeskPowerAppsUrl,
-  helpdeskTemplateForPrompt,
   parseHelpdeskLinkArgs,
 } from './helpdeskTemplate.js'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
@@ -75,20 +74,35 @@ const createTicketTool = {
 const helpdeskLinkParams = {
   type: 'object',
   properties: {
-    titulo: { type: 'string', description: 'Título breve del incidente' },
+    titulo: {
+      type: 'string',
+      description: 'Título o asunto del incidente (resumen breve para mesa de ayuda)',
+    },
     descripcion: {
       type: 'string',
-      description: 'Descripción del problema y pasos probados',
+      description: 'Descripción detallada: síntomas, errores y pasos ya probados',
     },
-    categoria: { type: 'string', description: 'Categoría coherente con HelpDesk' },
+    categoria: {
+      type: 'string',
+      description: 'Categoría (hardware, software, red, acceso, otro, etc.)',
+    },
     solicitado_por: {
       type: 'string',
-      description: 'Correo o nombre de quien solicita',
+      description: 'Correo corporativo o nombre completo de quien solicita el soporte',
     },
-    numero_contacto: { type: 'string' },
-    pais: { type: 'string' },
-    departamento: { type: 'string' },
-    torre: { type: 'string' },
+    numero_contacto: {
+      type: 'string',
+      description: 'Teléfono u otro número de contacto',
+    },
+    pais: { type: 'string', description: 'País o ubicación geográfica relevante' },
+    departamento: {
+      type: 'string',
+      description: 'Departamento, área o dirección dentro de la organización',
+    },
+    torre: {
+      type: 'string',
+      description: 'Torre, sede u oficina física si aplica',
+    },
   },
 } as const
 
@@ -97,7 +111,7 @@ const openHelpdeskLinkTool = {
   function: {
     name: 'open_helpdesk_link',
     description:
-      'Genera la URL de Power Apps HelpDesk con parámetros en el query string para precargar el formulario Nuevo Ticket. Úsala cuando convenga escalar a HelpDesk; rellena los campos conocidos del contexto (deja vacíos los desconocidos). Tras ejecutarla, incluye en tu mensaje el enlace para el usuario. Nombres de parámetro en la URL: Titulo, Descripcion, Categoria, SolicitadoPor, NumeroContacto, Pais, Departamento, Torre (la app canvas debe leerlos con Param).',
+      'Al escalar a HelpDesk, infiere titulo, descripcion, categoria, etc. y obtén la URL de Power Apps. El usuario verá un botón para abrir esa URL; no hace falta listar campos del formulario en el mensaje.',
     parameters: helpdeskLinkParams,
   },
 }
@@ -173,7 +187,6 @@ export async function runChat(params: {
   const relevantFaqs = await selectRelevantFaqs(userBlob, 3)
   const faqBlock = faqsToPromptBlock(relevantFaqs)
   const portalTickets = ticketsFromPortalEnabled()
-  const templateBlock = helpdeskTemplateForPrompt()
   const helpdeskDeepLink = hasHelpdeskPowerAppsUrl()
 
   const ticketPolicyPortal = `Cuando haga falta escalamiento o un ticket, usa por defecto la herramienta **propose_ticket**: el usuario confirmará con el botón «Sí, generar ticket» en la interfaz. Explica brevemente que puede pulsar el botón para crear el ticket.
@@ -181,23 +194,17 @@ Usa **create_ticket** solo si el usuario escribió de forma explícita que quier
 
   const helpdeskLinkInstruction = helpdeskDeepLink
     ? `
-Cuando convenga escalar a HelpDesk, llama primero a la herramienta **open_helpdesk_link** con los campos que puedas inferir (titulo, descripcion, categoria, solicitado_por, numero_contacto, pais, departamento, torre). Luego, en tu respuesta al usuario, incluye el enlace devuelto y la plantilla de texto siguiente.`
+Si hace falta escalar a HelpDesk, llama a **open_helpdesk_link** con los datos que puedas inferir; el usuario tendrá un botón con el enlace. No repitas en el texto listados de campos del formulario ni plantillas para rellenar a mano.`
     : ''
 
   const ticketPolicyHelpdesk = `NO hay creación de tickets en este portal: está desactivada.
-Cuando convenga escalamiento o registrar el caso en mesa de ayuda, indica que debe usar **HelpDesk Periferia** (Power Apps — «Nuevo Ticket»).${helpdeskLinkInstruction}
-El sistema **siempre** ofrece bajo la respuesta un botón con enlace a HelpDesk que ya lleva en la URL título, descripción y correo (si el usuario los puso); no depende solo de que llames a la herramienta.
-Incluye SIEMPRE al final un bloque listo para **copiar y pegar** con la siguiente plantilla, rellenando con lo que sepas (deja «[por completar]» donde falte). No inventes datos sensibles; usa marcadores si aplica.
-
---- Plantilla HelpDesk (copiar desde aquí) ---
-${templateBlock}
---- Fin plantilla ---
-
+Cuando convenga escalamiento o registrar el caso en mesa de ayuda, orienta con brevedad hacia **HelpDesk Periferia** (Power Apps — «Nuevo Ticket»).${helpdeskLinkInstruction}
+No incluyas en tu mensaje bloques tipo «plantilla para copiar», listados campo a campo ni texto pensado para pegar en formularios externos.
 Puedes mencionar de forma breve el ANS referencial según la gravedad usando la tabla de la base; el registro oficial es en HelpDesk.`
 
   const systemParts = [
     `Eres el asistente de Mesa de Servicios de Periferia. Idioma: español.
-Sé breve y empático. Si en tu contexto aparecen **FAQ oficiales** y la consulta del usuario encaja con ese tema, priorízalas y respóndele de forma conversacional (puedes resumir o usar pasos en lista) sin contradecir esa guía.
+Sé breve y empático. Si en tu contexto aparecen **FAQ oficiales** y la consulta del usuario encaja con ese tema, basa la respuesta principalmente en ellas (resumen o pasos en lista) sin contradecir esa guía.
 Para el resto, usa la base de conocimiento parametrizada que viene después de las FAQ (si las hay).
 Si el usuario envía una imagen o captura, analízala (texto visible, códigos de error, ventanas) y propón solución concreta.
 Cuando el problema parezca un error en pantalla, mensaje del sistema, código o interfaz y aún NO conste ninguna imagen en los mensajes del usuario sobre ese incidente, pide amablemente una captura de pantalla antes de sugerir escalamiento; explica que puede usar «Captura del error» o pegar con Ctrl+V. Si el usuario indica que no puede adjuntar imagen, continúa con lo que tengas.
@@ -350,7 +357,7 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
               url,
               campos_usados: fields,
               instruction:
-                'Incluye este URL en tu respuesta. El usuario verá también un botón en la app si el cliente lo soporta.',
+                'Incluye la URL en tu respuesta breve. El usuario verá el botón para abrir HelpDesk.',
             }),
           })
           continue
@@ -376,7 +383,7 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
     const text =
       rawText ||
       (helpdeskUrl
-        ? 'Puede abrir HelpDesk con el botón inferior; el enlace incluye su consulta y correo si los indicó.'
+        ? 'Puede abrir HelpDesk con el botón inferior para continuar en Power Apps.'
         : '')
     return {
       message: text,
@@ -394,11 +401,10 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
     params.messages,
     params.userEmail,
   )
-
   return {
     message: portalTickets
       ? 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o use HelpDesk para registrar el caso.'
-      : 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o registre el caso en HelpDesk con la plantilla que le indique el asistente.',
+      : 'Se alcanzó el límite de pasos en la conversación. Intente de nuevo o registre el caso en HelpDesk si aplica.',
     ...(helpdeskUrlFallback ? { helpdeskUrl: helpdeskUrlFallback } : {}),
   }
 }

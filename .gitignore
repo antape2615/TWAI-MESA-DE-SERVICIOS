@@ -6,3 +6,6 @@ server/data/tickets.json
 server/data/knowledge.json
 *.log
 .DS_Store
+
+# Local Netlify folder
+.netlify
