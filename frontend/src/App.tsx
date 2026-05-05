@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ClipboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ClipboardEvent } from 'react'
 import './App.css'
 import {
   postChat,
@@ -26,6 +26,38 @@ function priorityClass(p: string): string {
   return 'badge'
 }
 
+function ChatAvatarUser() {
+  return (
+    <span className="chat-avatar chat-avatar--user" aria-hidden>
+      <svg viewBox="0 0 32 32" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="11" r="5" fill="rgba(255,255,255,0.95)" />
+        <path
+          d="M8 26c0-5 3.5-8 8-8s8 3 8 8"
+          stroke="rgba(255,255,255,0.95)"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  )
+}
+
+function ChatAvatarAssistant() {
+  return (
+    <span className="chat-avatar chat-avatar--assistant" aria-hidden>
+      <img className="chat-avatar__img" src="/robot.png" alt="" />
+    </span>
+  )
+}
+
+function SendPlaneIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden xmlns="http://www.w3.org/2000/svg">
+      <path d="M3.4 19.6 20.85 12 3.4 4.4l-.05 6.55L16 12 3.35 13.05z" />
+    </svg>
+  )
+}
+
 function ChatSection({
   ticketsFromPortal,
   helpdeskDeepLink,
@@ -41,6 +73,11 @@ function ChatSection({
   const [confirmingIndex, setConfirmingIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mailNotice, setMailNotice] = useState<string | null>(null)
+
+  const visitorName = useMemo(
+    () => new URLSearchParams(window.location.search).get('nombre')?.trim() ?? '',
+    [],
+  )
 
   const onPickImage = useCallback((file: File | null) => {
     setPreviewUrl((prev) => {
@@ -166,140 +203,178 @@ function ChatSection({
     )
   }, [])
 
+  const greeting =
+    visitorName.length > 0
+      ? `Hola ${visitorName}, Soy Perxia y estoy aquí para solucionar tus preguntas`
+      : 'Hola, Soy Perxia y estoy aquí para solucionar tus preguntas'
+
   return (
-    <section className="panel" aria-labelledby="chat-heading">
-      <h2 id="chat-heading">Asistente de soporte</h2>
-      <p className="hint">
-        Describa el error o adjunte una captura (botón o pegar con Ctrl+V / Cmd+V en el cuadro de texto).
-        El asistente usa las guías oficiales de soporte cuando aplica.{' '}
-        {ticketsFromPortal
-          ? 'Si se ofrece un borrador de ticket, confirme con los botones.'
-          : helpdeskDeepLink
-            ? 'Para escalar a HelpDesk puede usar el enlace que indique el asistente (no se crean tickets desde aquí).'
-            : 'Para registrar un caso en mesa de ayuda, el asistente le orientará hacia HelpDesk (no se crean tickets desde aquí).'}
-      </p>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {mailNotice ? <div className="warning-banner">{mailNotice}</div> : null}
-      <div className="chat-messages">
-        {messages.length === 0 ? (
-          <p className="empty-state">Escriba su consulta para comenzar.</p>
-        ) : (
-          messages.map((m, i) => (
-            <div
-              key={`${i}-${m.role}`}
-              className={`bubble ${m.role === 'user' ? 'bubble--user' : 'bubble--assistant'}`}
-            >
-              <span className="bubble-label">{m.role === 'user' ? 'Usted' : 'Asistente'}</span>
-              {m.image ? (
-                <img
-                  className="bubble-image"
-                  src={`data:${m.image.mimeType};base64,${m.image.dataBase64}`}
-                  alt="Captura del error"
-                />
-              ) : null}
-              <p className="bubble-text">{m.content}</p>
-              {!ticketsFromPortal && m.helpdeskUrl ? (
-                <div className="helpdesk-panel">
-                  <a
-                    className="btn-primary helpdesk-open-btn"
-                    href={m.helpdeskUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Abrir HelpDesk en Power Apps (Nuevo ticket)
-                  </a>
-                </div>
-              ) : null}
-              {ticketsFromPortal && m.ticketCreatedId ? (
-                <p className="ticket-created-note">
-                  Ticket <strong>{m.ticketCreatedId}</strong> creado.
-                </p>
-              ) : null}
-              {ticketsFromPortal &&
-              m.role === 'assistant' &&
-              m.ticketDraft &&
-              !m.ticketCreatedId ? (
-                <div className="ticket-offer" role="group" aria-label="Confirmar ticket">
-                  <p className="ticket-offer-title">¿Generar ticket con estos datos?</p>
-                  <ul className="ticket-offer-meta">
-                    <li>
-                      <span className="ticket-offer-k">Título</span> {m.ticketDraft.title}
-                    </li>
-                    <li>
-                      <span className="ticket-offer-k">Prioridad</span>{' '}
-                      <span className={priorityClass(m.ticketDraft.priority)}>
-                        {m.ticketDraft.priority}
-                      </span>
-                    </li>
-                  </ul>
-                  <div className="ticket-offer-actions">
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      disabled={confirmingIndex !== null || loading}
-                      onClick={() => void onConfirmTicket(i, m.ticketDraft!)}
-                    >
-                      {confirmingIndex === i ? 'Creando…' : 'Sí, generar ticket'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={confirmingIndex !== null}
-                      onClick={() => onDismissTicket(i)}
-                    >
-                      No, gracias
-                    </button>
+    <div className="chatbot-layout">
+      <section className="chatbot-card" aria-labelledby="chat-heading">
+        <h2 id="chat-heading" className="sr-only">
+          Asistente HelpDesk Periferia IT
+        </h2>
+        <header className="chatbot-card__header">
+          <div className="chatbot-logo" aria-hidden>
+            <div className="chatbot-logo__mark">
+              <img className="chatbot-logo__img" src="/logohelpdesk.png" alt="" />
+            </div>
+            <div className="chatbot-logo__text">
+              <span className="chatbot-logo__title">HelpDesk</span>
+              <span className="chatbot-logo__subtitle">Periferia IT</span>
+            </div>
+          </div>
+          <p className="chatbot-card__greeting">{greeting}</p>
+        </header>
+        <p className="chatbot-card__hint">
+          Describa el error o adjunte una captura (pegar con Ctrl+V / Cmd+V).{' '}
+          {ticketsFromPortal
+            ? 'Si aparece un borrador de ticket, confírmelo con los botones.'
+            : helpdeskDeepLink
+              ? 'Para HelpDesk use el enlace que indique el asistente.'
+              : 'El registro formal del caso es en HelpDesk cuando el asistente lo indique.'}
+        </p>
+        {error ? <div className="error-banner chatbot-banner">{error}</div> : null}
+        {mailNotice ? <div className="warning-banner chatbot-banner">{mailNotice}</div> : null}
+        <div className="chat-messages">
+          {messages.length === 0 ? (
+            <p className="empty-state">Escriba su consulta para comenzar.</p>
+          ) : (
+            messages.map((m, i) =>
+              m.role === 'user' ? (
+                <div key={`${i}-${m.role}`} className="chat-row chat-row--user">
+                  <div className="chat-row__inner">
+                    <div className="bubble bubble--user">
+                      <span className="bubble-label">Usted</span>
+                      {m.image ? (
+                        <img
+                          className="bubble-image"
+                          src={`data:${m.image.mimeType};base64,${m.image.dataBase64}`}
+                          alt="Captura del error"
+                        />
+                      ) : null}
+                      <p className="bubble-text">{m.content}</p>
+                    </div>
+                    <ChatAvatarUser />
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div key={`${i}-${m.role}`} className="chat-row chat-row--assistant">
+                  <div className="chat-row__inner">
+                    <ChatAvatarAssistant />
+                    <div className="bubble bubble--assistant">
+                      <span className="bubble-label">Asistente</span>
+                      {m.image ? (
+                        <img
+                          className="bubble-image"
+                          src={`data:${m.image.mimeType};base64,${m.image.dataBase64}`}
+                          alt="Captura del error"
+                        />
+                      ) : null}
+                      <p className="bubble-text">{m.content}</p>
+                      {ticketsFromPortal && m.ticketCreatedId ? (
+                        <p className="ticket-created-note">
+                          Ticket <strong>{m.ticketCreatedId}</strong> creado.
+                        </p>
+                      ) : null}
+                      {ticketsFromPortal && m.ticketDraft && !m.ticketCreatedId ? (
+                        <div className="ticket-offer" role="group" aria-label="Confirmar ticket">
+                          <p className="ticket-offer-title">¿Generar ticket con estos datos?</p>
+                          <ul className="ticket-offer-meta">
+                            <li>
+                              <span className="ticket-offer-k">Título</span> {m.ticketDraft.title}
+                            </li>
+                            <li>
+                              <span className="ticket-offer-k">Prioridad</span>{' '}
+                              <span className={priorityClass(m.ticketDraft.priority)}>
+                                {m.ticketDraft.priority}
+                              </span>
+                            </li>
+                          </ul>
+                          <div className="ticket-offer-actions">
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              disabled={confirmingIndex !== null || loading}
+                              onClick={() => void onConfirmTicket(i, m.ticketDraft!)}
+                            >
+                              {confirmingIndex === i ? 'Creando…' : 'Sí, generar ticket'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              disabled={confirmingIndex !== null}
+                              onClick={() => onDismissTicket(i)}
+                            >
+                              No, gracias
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ),
+            )
+          )}
+          {loading ? (
+            <div className="chat-row chat-row--assistant">
+              <div className="chat-row__inner">
+                <ChatAvatarAssistant />
+                <div className="bubble bubble--assistant bubble--typing">
+                  <span className="bubble-label">Asistente</span>
+                  <p className="bubble-text bubble-text--plain">Pensando…</p>
+                </div>
+              </div>
             </div>
-          ))
-        )}
-        {loading ? (
-          <div className="bubble bubble--assistant">
-            <span className="bubble-label">Asistente</span>
-            <p>Pensando…</p>
-          </div>
-        ) : null}
-      </div>
-      <div className="chat-attach-row">
-        <label className="file-attach">
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
-            className="sr-only"
-            onChange={(e) => onPickImage(e.target.files?.[0] ?? null)}
+          ) : null}
+        </div>
+        <div className="chat-attach-row chat-attach-row--compact">
+          <label className="file-attach">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+              className="sr-only"
+              onChange={(e) => onPickImage(e.target.files?.[0] ?? null)}
+            />
+            <span className="file-attach-label">Adjuntar captura</span>
+          </label>
+          {previewUrl ? (
+            <div className="preview-wrap">
+              <img src={previewUrl} alt="Vista previa" className="preview-thumb" />
+              <button type="button" className="btn-secondary" onClick={() => onPickImage(null)}>
+                Quitar
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <div className="chatbot-composer">
+          <textarea
+            className="chatbot-input"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Escribe tu mensaje… (Enter para enviar, Mayús+Enter salto)"
+            rows={2}
+            onPaste={onPasteImage}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void send()
+              }
+            }}
           />
-          <span className="file-attach-label">Captura del error</span>
-        </label>
-        {previewUrl ? (
-          <div className="preview-wrap">
-            <img src={previewUrl} alt="Vista previa" className="preview-thumb" />
-            <button type="button" className="btn-secondary" onClick={() => onPickImage(null)}>
-              Quitar imagen
-            </button>
-          </div>
-        ) : null}
-      </div>
-      <div className="chat-input-row">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ej.: No puedo entrar a la VPN… Pegue aquí una captura (Ctrl+V / Cmd+V)"
-          rows={3}
-          onPaste={onPasteImage}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void send()
-            }
-          }}
-        />
-        <button type="button" className="btn-primary" disabled={loading} onClick={() => void send()}>
-          Enviar
-        </button>
-      </div>
-    </section>
+          <button
+            type="button"
+            className="chatbot-send"
+            disabled={loading}
+            onClick={() => void send()}
+            aria-label="Enviar mensaje"
+          >
+            <SendPlaneIcon />
+          </button>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -501,42 +576,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header>
-        <div className="header-top">
-          <div>
-            <p className="eyebrow">Periferia · Mesa de servicios</p>
-            <h1>Soporte con asistente inteligente</h1>
-            <p className="subtitle">
-              Converse sobre errores e incidencias; el asistente aplicará las guías de Mesa de Servicios cuando
-              correspondan.
-              {ticketsFromPortal
-                ? ' Podrá orientarle en tickets con ANS definido desde esta aplicación.'
-                : helpdeskDeepLink
-                  ? ' El registro en HelpDesk puede abrirse con un enlace desde el chat cuando aplique.'
-                  : ' El registro formal del caso es en HelpDesk cuando el asistente lo indique.'}
-            </p>
-          </div>
-          {SHOW_KNOWLEDGE_TAB ? (
-            <nav className="tabs" aria-label="Secciones">
-              <button
-                type="button"
-                className={tab === 'chat' ? 'active' : ''}
-                onClick={() => setTab('chat')}
-              >
-                Chat
-              </button>
-              <button
-                type="button"
-                className={tab === 'knowledge' ? 'active' : ''}
-                onClick={() => setTab('knowledge')}
-              >
-                Parámetros
-              </button>
-            </nav>
-          ) : null}
-        </div>
-      </header>
-      <main>
+      <main className={tab === 'chat' ? 'main--chat' : undefined}>
         {tab === 'chat' ? (
           <ChatSection ticketsFromPortal={ticketsFromPortal} helpdeskDeepLink={helpdeskDeepLink} />
         ) : null}
