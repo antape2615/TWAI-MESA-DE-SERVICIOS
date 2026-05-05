@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ClipboardEvent } from 'react'
+import { useCallback, useEffect, useState, type ClipboardEvent } from 'react'
 import './App.css'
 import {
   postChat,
@@ -12,6 +12,7 @@ import {
   type KnowledgePayload,
   type KnowledgeEntry,
 } from './api'
+import { readDisplayNameFromUrl } from './urlDisplayName'
 
 /** Pestaña "Parámetros": oculta hasta definir acceso por usuario/rol */
 const SHOW_KNOWLEDGE_TAB = false
@@ -74,10 +75,18 @@ function ChatSection({
   const [error, setError] = useState<string | null>(null)
   const [mailNotice, setMailNotice] = useState<string | null>(null)
 
-  const visitorName = useMemo(
-    () => new URLSearchParams(window.location.search).get('nombre')?.trim() ?? '',
-    [],
-  )
+  const [visitorName, setVisitorName] = useState(() => readDisplayNameFromUrl())
+
+  useEffect(() => {
+    const sync = () => setVisitorName(readDisplayNameFromUrl())
+    sync()
+    window.addEventListener('hashchange', sync)
+    window.addEventListener('popstate', sync)
+    return () => {
+      window.removeEventListener('hashchange', sync)
+      window.removeEventListener('popstate', sync)
+    }
+  }, [])
 
   const onPickImage = useCallback((file: File | null) => {
     setPreviewUrl((prev) => {
