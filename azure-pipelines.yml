@@ -52,4 +52,5 @@ stages:
         appType: 'webAppLinux'
         appName: $(webAppName)
         package: '$(Pipeline.Workspace)/drop/app.zip'
+        appSettings: '-PORT 8787 -WEBSITES_PORT 8787 -WEBSITES_CONTAINER_START_TIME_LIMIT 1800'
 
