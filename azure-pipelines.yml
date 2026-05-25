@@ -13,15 +13,19 @@ stages:
     pool:
       vmImage: 'ubuntu-latest'
     steps:
-    - task: NodeTool@0
+    - task: UseNode@1
       inputs:
-        versionSpec: $(nodeVersion)
+        version: $(nodeVersion)
       displayName: 'Install Node.js'
 
     - script: |
         npm install
         npm run build
       displayName: 'Install and Build'
+
+    - script: |
+        npm prune --omit=dev
+      displayName: 'Remove dev dependencies'
 
     - task: ArchiveFiles@2
       inputs:
@@ -54,5 +58,5 @@ stages:
         runtimeStack: 'NODE|20-lts'
         package: '$(Pipeline.Workspace)/drop/app.zip'
         startUpCommand: 'npm run start'
-        appSettings: '-PORT 8787 -WEBSITES_PORT 8787 -WEBSITES_CONTAINER_START_TIME_LIMIT 1800'
+        appSettings: '-PORT 8787 -WEBSITES_PORT 8787 -WEBSITES_CONTAINER_START_TIME_LIMIT 1800 -SCM_DO_BUILD_DURING_DEPLOYMENT false -WEBSITE_RUN_FROM_PACKAGE 1'
 
