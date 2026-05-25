@@ -49,33 +49,12 @@ stages:
     - download: current
       artifact: drop
 
-    - task: AzureCLI@2
-      displayName: 'Configure App Settings'
+    - task: AzureWebApp@1
+      displayName: 'Azure Web App Deploy'
+      continueOnError: true
       inputs:
         azureSubscription: $(azureSubscription)
-        scriptType: 'bash'
-        scriptLocation: 'inlineScript'
-        inlineScript: |
-          az webapp config appsettings set \
-            --name $(webAppName) \
-            --resource-group $(az webapp show --name $(webAppName) --query resourceGroup -o tsv) \
-            --settings PORT=8787 WEBSITES_PORT=8787 WEBSITES_CONTAINER_START_TIME_LIMIT=1800 SCM_DO_BUILD_DURING_DEPLOYMENT=false
-
-          az webapp config set \
-            --name $(webAppName) \
-            --resource-group $(az webapp show --name $(webAppName) --query resourceGroup -o tsv) \
-            --startup-file "npm run start"
-
-    - task: AzureCLI@2
-      displayName: 'Deploy ZIP to App Service'
-      inputs:
-        azureSubscription: $(azureSubscription)
-        scriptType: 'bash'
-        scriptLocation: 'inlineScript'
-        inlineScript: |
-          az webapp deploy \
-            --name $(webAppName) \
-            --resource-group $(az webapp show --name $(webAppName) --query resourceGroup -o tsv) \
-            --src-path "$(Pipeline.Workspace)/drop/app.zip" \
-            --type zip
+        appType: 'webAppLinux'
+        appName: $(webAppName)
+        package: '$(Pipeline.Workspace)/drop/app.zip'
 
