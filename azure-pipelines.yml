@@ -49,14 +49,14 @@ stages:
     - download: current
       artifact: drop
 
-    - task: AzureRmWebAppDeployment@4
+    - task: AzureWebApp@1
       displayName: 'Azure Web App Deploy'
+      continueOnError: true
       inputs:
         azureSubscription: $(azureSubscription)
         appType: 'webAppLinux'
-        WebAppName: $(webAppName)
-        RuntimeStack: 'NODE|20-lts'
+        appName: $(webAppName)
         package: '$(Pipeline.Workspace)/drop/app.zip'
-        StartupCommand: 'npm run start'
-        AppSettings: '-PORT 8787 -WEBSITES_PORT 8787 -WEBSITES_CONTAINER_START_TIME_LIMIT 1800 -SCM_DO_BUILD_DURING_DEPLOYMENT false'
+        startUpCommand: 'npm run start'
+        appSettings: '-PORT 8787 -WEBSITES_PORT 8787 -WEBSITES_CONTAINER_START_TIME_LIMIT 1800 -SCM_DO_BUILD_DURING_DEPLOYMENT false'
 
