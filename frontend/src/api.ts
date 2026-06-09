@@ -61,6 +61,7 @@ export type UserSessionPayload = {
   userEmail?: string
   userName?: string
   accessToken?: string
+  sharePointAccessToken?: string
   jobTitle?: string
   department?: string
   officeLocation?: string
@@ -89,6 +90,7 @@ function userSessionBody(session?: UserSessionPayload): UserSessionPayload {
   if (session.userEmail) out.userEmail = session.userEmail
   if (session.userName) out.userName = session.userName
   if (session.accessToken) out.accessToken = session.accessToken
+  if (session.sharePointAccessToken) out.sharePointAccessToken = session.sharePointAccessToken
   if (session.jobTitle) out.jobTitle = session.jobTitle
   if (session.department) out.department = session.department
   if (session.officeLocation) out.officeLocation = session.officeLocation
