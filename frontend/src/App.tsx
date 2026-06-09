@@ -7,7 +7,6 @@ import {
   fetchKnowledge,
   saveKnowledge,
   fetchAppConfig,
-  type AppConfig,
   type ChatMessage,
   type TicketDraft,
   type KnowledgePayload,
@@ -16,7 +15,6 @@ import {
 import {
   microsoftSignInHint,
   readInitialUserSession,
-  refreshTicketAuthTokens,
   resolveUserSession,
   shouldOfferMicrosoftSignIn,
   type UserSession,
@@ -80,7 +78,6 @@ function MicrosoftIcon() {
 }
 
 function ChatSection({
-  appConfig,
   ticketsFromPortal,
   helpdeskDeepLink,
   sharePointListUrl,
@@ -90,7 +87,6 @@ function ChatSection({
   authLoading,
   onSignIn,
 }: {
-  appConfig: AppConfig | null
   ticketsFromPortal: boolean
   helpdeskDeepLink: boolean
   sharePointListUrl?: string
@@ -113,7 +109,6 @@ function ChatSection({
       userEmail: userSession.email || undefined,
       userName: userSession.name || undefined,
       accessToken: userSession.accessToken,
-      sharePointAccessToken: userSession.sharePointAccessToken,
       jobTitle: userSession.jobTitle,
       department: userSession.department,
       officeLocation: userSession.officeLocation,
@@ -213,23 +208,7 @@ function ChatSection({
       setConfirmingIndex(messageIndex)
       setError(null)
       try {
-        let payload = sessionPayload
-        if (appConfig?.sharePointTickets) {
-          const refreshed = await refreshTicketAuthTokens(appConfig, userSession)
-          payload = {
-            ...sessionPayload,
-            accessToken: refreshed.accessToken ?? sessionPayload.accessToken,
-            sharePointAccessToken:
-              refreshed.sharePointAccessToken ?? sessionPayload.sharePointAccessToken,
-          }
-          if (!payload.sharePointAccessToken && !payload.accessToken) {
-            setError(
-              'Inicie sesión con Microsoft de nuevo para registrar «Solicitado Por» en SharePoint.',
-            )
-            return
-          }
-        }
-        const { ticket } = await createTicketConfirm(draft, payload)
+        const { ticket } = await createTicketConfirm(draft, sessionPayload)
         setMessages((prev) =>
           prev.map((msg, i) =>
             i === messageIndex
@@ -247,7 +226,7 @@ function ChatSection({
         setConfirmingIndex(null)
       }
     },
-    [appConfig, confirmingIndex, sessionPayload, userSession],
+    [confirmingIndex, sessionPayload],
   )
 
   const onDismissTicket = useCallback((messageIndex: number) => {
@@ -714,7 +693,6 @@ function App() {
       <main className={tab === 'chat' ? 'main--chat' : undefined}>
         {tab === 'chat' ? (
           <ChatSection
-            appConfig={appConfig}
             ticketsFromPortal={ticketsFromPortal}
             helpdeskDeepLink={helpdeskDeepLink}
             sharePointListUrl={sharePointListUrl}
