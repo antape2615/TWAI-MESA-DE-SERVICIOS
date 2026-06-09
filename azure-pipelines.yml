@@ -80,29 +80,44 @@ stages:
       artifact: drop
 
     - task: AzureWebApp@1
-      displayName: 'Deploy + variables de entorno'
+      displayName: 'Deploy ZIP al App Service'
       inputs:
         azureSubscription: $(azureSubscription)
         appType: 'webAppLinux'
         appName: $(webAppName)
         package: '$(Pipeline.Workspace)/drop/app.zip'
-        runtimeStack: 'NODE|20-lts'
-        startUpCommand: 'npm start'
-        appSettings: |
-          -NODE_ENV production
-          -SCM_DO_BUILD_DURING_DEPLOYMENT false
-          -WEBSITES_PORT 8080
-          -AZURE_OPENAI_ENDPOINT $(AZURE_OPENAI_ENDPOINT)
-          -AZURE_OPENAI_API_KEY $(AZURE_OPENAI_API_KEY)
-          -AZURE_OPENAI_DEPLOYMENT $(AZURE_OPENAI_DEPLOYMENT)
-          -AZURE_OPENAI_DEPLOYMENT_NAME $(AZURE_OPENAI_DEPLOYMENT_NAME)
-          -AZURE_OPENAI_API_VERSION $(AZURE_OPENAI_API_VERSION)
-          -AZURE_TENANT_ID $(AZURE_TENANT_ID)
-          -SHAREPOINT_CLIENT_ID $(SHAREPOINT_CLIENT_ID)
-          -SHAREPOINT_CLIENT_SECRET $(SHAREPOINT_CLIENT_SECRET)
-          -SHAREPOINT_SITE_URL $(SHAREPOINT_SITE_URL)
-          -SHAREPOINT_LIST_NAME $(SHAREPOINT_LIST_NAME)
-          -HELPDESK_POWERAPPS_URL $(HELPDESK_POWERAPPS_URL)
-          -TICKETS_FROM_PORTAL_ENABLED $(TICKETS_FROM_PORTAL_ENABLED)
-          -AZURE_AUTH_ENABLED $(AZURE_AUTH_ENABLED)
-          -TICKET_NOTIFY_EMAIL $(TICKET_NOTIFY_EMAIL)
+
+    # runtimeStack/startUpCommand en AzureWebApp@1 provoca error en algunas versiones;
+    # startup y variables se aplican con Azure CLI.
+    - task: AzureCLI@2
+      displayName: 'Startup + variables de entorno'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          RG=$(az webapp list --query "[?name=='$(webAppName)'].resourceGroup | [0]" -o tsv)
+          if [ -z "$RG" ]; then
+            echo "No se encontró el resource group de $(webAppName)"
+            exit 1
+          fi
+          az webapp config set -g "$RG" -n '$(webAppName)' --startup-file 'npm start'
+          az webapp config appsettings set -g "$RG" -n '$(webAppName)' --settings \
+            NODE_ENV=production \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            WEBSITES_PORT=8080 \
+            AZURE_OPENAI_ENDPOINT='$(AZURE_OPENAI_ENDPOINT)' \
+            AZURE_OPENAI_API_KEY='$(AZURE_OPENAI_API_KEY)' \
+            AZURE_OPENAI_DEPLOYMENT='$(AZURE_OPENAI_DEPLOYMENT)' \
+            AZURE_OPENAI_DEPLOYMENT_NAME='$(AZURE_OPENAI_DEPLOYMENT_NAME)' \
+            AZURE_OPENAI_API_VERSION='$(AZURE_OPENAI_API_VERSION)' \
+            AZURE_TENANT_ID='$(AZURE_TENANT_ID)' \
+            SHAREPOINT_CLIENT_ID='$(SHAREPOINT_CLIENT_ID)' \
+            SHAREPOINT_CLIENT_SECRET='$(SHAREPOINT_CLIENT_SECRET)' \
+            SHAREPOINT_SITE_URL='$(SHAREPOINT_SITE_URL)' \
+            SHAREPOINT_LIST_NAME='$(SHAREPOINT_LIST_NAME)' \
+            HELPDESK_POWERAPPS_URL='$(HELPDESK_POWERAPPS_URL)' \
+            TICKETS_FROM_PORTAL_ENABLED='$(TICKETS_FROM_PORTAL_ENABLED)' \
+            AZURE_AUTH_ENABLED='$(AZURE_AUTH_ENABLED)' \
+            TICKET_NOTIFY_EMAIL='$(TICKET_NOTIFY_EMAIL)'
