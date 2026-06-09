@@ -105,6 +105,7 @@ export function buildPowerAppsDeepLink(fields: HelpdeskLinkFields): string | nul
 export function buildFallbackHelpdeskFields(
   lastUserText: string,
   userEmail?: string,
+  userName?: string,
 ): HelpdeskLinkFields {
   const raw = lastUserText.trim()
   const firstLine = raw.split(/[\n\r]+/)[0]?.trim() ?? ''
@@ -117,16 +118,20 @@ export function buildFallbackHelpdeskFields(
   return {
     titulo,
     descripcion,
-    solicitado_por: userEmail?.trim() || undefined,
+    solicitado_por:
+      userName?.trim() || userEmail?.trim() || undefined,
   }
 }
 
 export function buildFallbackDeepLink(
   lastUserText: string,
   userEmail?: string,
+  userName?: string,
 ): string | null {
   if (!hasHelpdeskPowerAppsUrl()) return null
-  return buildPowerAppsDeepLink(buildFallbackHelpdeskFields(lastUserText, userEmail))
+  return buildPowerAppsDeepLink(
+    buildFallbackHelpdeskFields(lastUserText, userEmail, userName),
+  )
 }
 
 /** Combina lo devuelto por la herramienta con el fallback del último mensaje. */

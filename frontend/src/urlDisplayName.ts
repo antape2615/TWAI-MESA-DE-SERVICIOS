@@ -2,10 +2,13 @@
  * Nombre del usuario para el saludo cuando la app se abre embebida (p. ej. Power Apps)
  * vía URL. Se aceptan varias claves por si el equipo de Power Apps usa nombres distintos.
  *
- * En Power Apps (ejemplo): URL del control Web + "?nombre=" & EncodeUrl( User().FullName )
+ * En Power Apps (botón que abre el chatbot), por ejemplo:
+ *   "https://tu-chatbot.com/?nombre=" & EncodeUrl(User().FullName) &
+ *   "&email=" & EncodeUrl(User().Email)
+ * Si además está activo el login Microsoft (MSAL), el correo de la URL acelera el SSO.
  */
 
-const PARAM_KEYS = [
+const NAME_PARAM_KEYS = [
   'nombre',
   'name',
   'displayName',
@@ -16,6 +19,15 @@ const PARAM_KEYS = [
   'user',
   'givenName',
   'givenname',
+] as const
+
+const EMAIL_PARAM_KEYS = [
+  'email',
+  'correo',
+  'mail',
+  'userEmail',
+  'useremail',
+  'upn',
 ] as const
 
 function decodeParamValue(raw: string): string {
@@ -32,8 +44,8 @@ function decodeParamValue(raw: string): string {
   return s.trim()
 }
 
-function firstNameFromParams(params: URLSearchParams): string {
-  for (const key of PARAM_KEYS) {
+function firstMatchFromParams(params: URLSearchParams, keys: readonly string[]): string {
+  for (const key of keys) {
     const raw = params.get(key) ?? params.get(key.toLowerCase())
     if (raw) {
       const decoded = decodeParamValue(raw)
@@ -51,13 +63,33 @@ function paramsFromHash(): URLSearchParams | null {
   return new URLSearchParams(q)
 }
 
-export function readDisplayNameFromUrl(): string {
-  const fromSearch = firstNameFromParams(new URLSearchParams(window.location.search))
-  if (fromSearch) return fromSearch
+function readParamSet(): URLSearchParams[] {
+  const sets = [new URLSearchParams(window.location.search)]
   const fromHash = paramsFromHash()
-  if (fromHash) {
-    const fromHashName = firstNameFromParams(fromHash)
-    if (fromHashName) return fromHashName
+  if (fromHash) sets.push(fromHash)
+  return sets
+}
+
+export function readDisplayNameFromUrl(): string {
+  for (const params of readParamSet()) {
+    const name = firstMatchFromParams(params, NAME_PARAM_KEYS)
+    if (name) return name
   }
   return ''
+}
+
+/** Correo pasado desde Power Apps (User().Email) u otra fuente embebida. */
+export function readEmailFromUrl(): string {
+  for (const params of readParamSet()) {
+    const email = firstMatchFromParams(params, EMAIL_PARAM_KEYS)
+    if (email && email.includes('@')) return email
+  }
+  return ''
+}
+
+export function readUserFromUrl(): { name: string; email: string } {
+  return {
+    name: readDisplayNameFromUrl(),
+    email: readEmailFromUrl(),
+  }
 }

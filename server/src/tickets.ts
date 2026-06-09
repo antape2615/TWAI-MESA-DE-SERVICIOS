@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { TICKETS_FILE } from './paths.js'
+import { createSharePointTicket, sharePointTicketsEnabled } from './sharepoint.js'
 import { z } from 'zod'
 
 const Priority = z.enum(['baja', 'media', 'alta', 'critica'])
@@ -63,7 +64,16 @@ export async function createTicket(input: {
   ansHours: number
   possibleSolutions: string[]
   userEmail?: string
+  userName?: string
+  jobTitle?: string
+  department?: string
+  officeLocation?: string
+  phone?: string
 }): Promise<Ticket> {
+  if (sharePointTicketsEnabled()) {
+    return createSharePointTicket(input)
+  }
+
   const { tickets } = await readStore()
   const ticket: Ticket = {
     id: nextId(tickets),

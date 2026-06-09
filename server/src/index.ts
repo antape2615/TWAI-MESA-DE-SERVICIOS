@@ -7,10 +7,21 @@ import cors from 'cors'
 import { z } from 'zod'
 import { runChat } from './chat.js'
 import { ticketsFromPortalEnabled } from './features.js'
+import {
+  getSharePointListUrl,
+  logSharePointStartupHint,
+  sharePointTicketsEnabled,
+} from './sharepoint.js'
 import { getHelpdeskPowerAppsUrl, hasHelpdeskPowerAppsUrl } from './helpdeskTemplate.js'
 import { createTicket, listTickets } from './tickets.js'
-import { logEmailStartupHint, sendTicketCreatedEmail } from './email.js'
+import {
+  emailNotificationsEnabled,
+  logEmailStartupHint,
+  sendTicketCreatedEmail,
+} from './email.js'
 import { readKnowledge, writeKnowledge, type KnowledgeData } from './knowledge.js'
+import { getAzureAuthConfig } from './azureAuth.js'
+import { resolveSessionUser } from './userSession.js'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
 const app = express()
@@ -23,9 +34,13 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/config', (_req, res) => {
   const helpdeskUrl = getHelpdeskPowerAppsUrl()
+  const sharePointListUrl = getSharePointListUrl()
   res.json({
     ticketsFromPortal: ticketsFromPortalEnabled(),
     helpdeskDeepLink: hasHelpdeskPowerAppsUrl(),
+    sharePointTickets: sharePointTicketsEnabled(),
+    azureAuth: getAzureAuthConfig(),
+    ...(sharePointListUrl ? { sharePointListUrl } : {}),
     ...(helpdeskUrl ? { helpdeskPowerAppsUrl: helpdeskUrl } : {}),
   })
 })
@@ -47,6 +62,12 @@ const CreateTicketBodySchema = z.object({
   priority: z.enum(['baja', 'media', 'alta', 'critica']),
   possibleSolutions: z.array(z.string()),
   userEmail: z.union([z.string().email(), z.literal('')]).optional(),
+  userName: z.string().optional(),
+  accessToken: z.string().optional(),
+  jobTitle: z.string().optional(),
+  department: z.string().optional(),
+  officeLocation: z.string().optional(),
+  phone: z.string().optional(),
 })
 
 app.post('/api/tickets', async (req, res) => {
@@ -64,8 +85,8 @@ app.post('/api/tickets', async (req, res) => {
       return
     }
     const knowledge = await readKnowledge()
-    const { title, description, category, priority, possibleSolutions, userEmail } =
-      parsed.data
+    const { title, description, category, priority, possibleSolutions } = parsed.data
+    const user = await resolveSessionUser(parsed.data)
     const ansHours =
       knowledge.slaHoursByPriority[priority] ??
       knowledge.slaHoursByPriority['media'] ??
@@ -77,10 +98,17 @@ app.post('/api/tickets', async (req, res) => {
       priority,
       ansHours,
       possibleSolutions,
-      userEmail: userEmail || undefined,
+      userEmail: user.email,
+      userName: user.name,
+      jobTitle: user.jobTitle,
+      department: user.department,
+      officeLocation: user.officeLocation,
+      phone: user.phone,
     })
-    const email = await sendTicketCreatedEmail(ticket)
-    res.json({ ticket, email })
+    const email = emailNotificationsEnabled()
+      ? await sendTicketCreatedEmail(ticket)
+      : undefined
+    res.json({ ticket, ...(email ? { email } : {}) })
   } catch (e) {
     console.error(e)
     res.status(500).json({ error: 'No se pudo crear el ticket' })
@@ -146,6 +174,12 @@ const ChatSchema = z.object({
     }),
   ),
   userEmail: z.union([z.string().email(), z.literal('')]).optional(),
+  userName: z.string().optional(),
+  accessToken: z.string().optional(),
+  jobTitle: z.string().optional(),
+  department: z.string().optional(),
+  officeLocation: z.string().optional(),
+  phone: z.string().optional(),
 })
 
 function toOpenAIMessages(
@@ -191,7 +225,8 @@ app.post('/api/chat', async (req, res) => {
       res.status(400).json({ error: 'Mensajes inválidos' })
       return
     }
-    const { messages, userEmail } = parsed.data
+    const { messages } = parsed.data
+    const user = await resolveSessionUser(parsed.data)
     let openaiMessages: ChatCompletionMessageParam[]
     try {
       openaiMessages = toOpenAIMessages(messages)
@@ -202,7 +237,12 @@ app.post('/api/chat', async (req, res) => {
     }
     const result = await runChat({
       messages: openaiMessages,
-      userEmail: userEmail || undefined,
+      userEmail: user.email,
+      userName: user.name,
+      jobTitle: user.jobTitle,
+      department: user.department,
+      officeLocation: user.officeLocation,
+      phone: user.phone,
     })
     res.json(result)
   } catch (e) {
@@ -232,4 +272,9 @@ const port = Number(process.env.PORT ?? 8787)
 app.listen(port, () => {
   console.log(`Mesa Servicios en http://localhost:${port}`)
   logEmailStartupHint()
+  logSharePointStartupHint()
+  const auth = getAzureAuthConfig()
+  if (auth.enabled) {
+    console.log('[auth] Login Microsoft habilitado (MSAL en frontend, validación Graph /me)')
+  }
 })

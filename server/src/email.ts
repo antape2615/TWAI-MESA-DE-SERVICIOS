@@ -121,28 +121,33 @@ async function sendViaSmtp(
   }
 }
 
+/** true solo si hay Resend o SMTP configurado (sin esto no se intenta enviar). */
+export function emailNotificationsEnabled(): boolean {
+  if (process.env.RESEND_API_KEY?.trim()) return true
+  return Boolean(
+    process.env.SMTP_HOST?.trim() &&
+      process.env.SMTP_USER?.trim() &&
+      process.env.SMTP_PASS,
+  )
+}
+
 export function logEmailStartupHint(): void {
+  if (!emailNotificationsEnabled()) return
   if (process.env.RESEND_API_KEY?.trim()) {
     console.log('[email] Notificaciones: Resend (RESEND_API_KEY)')
     return
   }
-  if (
-    process.env.SMTP_HOST?.trim() &&
-    process.env.SMTP_USER?.trim() &&
-    process.env.SMTP_PASS
-  ) {
-    const p = process.env.SMTP_PORT || '587'
-    console.log(
-      `[email] Notificaciones: SMTP ${process.env.SMTP_HOST?.trim()}:${p}`,
-    )
-    return
-  }
-  console.warn(
-    '[email] Sin envío de correo: defina RESEND_API_KEY o SMTP_HOST + SMTP_USER + SMTP_PASS (ver .env.example)',
+  const p = process.env.SMTP_PORT || '587'
+  console.log(
+    `[email] Notificaciones: SMTP ${process.env.SMTP_HOST?.trim()}:${p}`,
   )
 }
 
 export async function sendTicketCreatedEmail(ticket: Ticket): Promise<EmailSendResult> {
+  if (!emailNotificationsEnabled()) {
+    return { sent: false, method: 'none' }
+  }
+
   const notifyTo =
     process.env.TICKET_NOTIFY_EMAIL?.trim() ?? 'angiepena@cbit-online.com'
   const body = buildBody(ticket)
@@ -151,20 +156,6 @@ export async function sendTicketCreatedEmail(ticket: Ticket): Promise<EmailSendR
     return sendViaResend(ticket, notifyTo, body)
   }
 
-  if (getSmtpTransport()) {
-    const subject = `[Mesa Periferia] Nuevo ticket ${ticket.id} — ${ticket.title}`
-    return sendViaSmtp(subject, notifyTo, body)
-  }
-
-  console.warn(
-    '[email] No hay RESEND_API_KEY ni SMTP completo. Correo no enviado. Destinatario previsto:',
-    notifyTo,
-  )
-  console.warn('[email] Cuerpo que se habría enviado:\n', body)
-  return {
-    sent: false,
-    error:
-      'No hay método de envío configurado (RESEND_API_KEY o SMTP_HOST, SMTP_USER, SMTP_PASS)',
-    method: 'none',
-  }
+  const subject = `[Mesa Periferia] Nuevo ticket ${ticket.id} — ${ticket.title}`
+  return sendViaSmtp(subject, notifyTo, body)
 }

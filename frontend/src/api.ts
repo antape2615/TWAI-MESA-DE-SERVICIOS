@@ -51,12 +51,47 @@ export type EmailSendResult = {
   method?: 'resend' | 'smtp' | 'none'
 }
 
+export type AzureAuthConfig = {
+  enabled: boolean
+  tenantId?: string
+  clientId?: string
+}
+
+export type UserSessionPayload = {
+  userEmail?: string
+  userName?: string
+  accessToken?: string
+  jobTitle?: string
+  department?: string
+  officeLocation?: string
+  phone?: string
+}
+
 export type AppConfig = {
   ticketsFromPortal: boolean
   /** True si HELPDESK_POWERAPPS_URL está definida (enlace profundo disponible) */
   helpdeskDeepLink: boolean
+  /** Tickets se registran en SharePoint (lista RPA_SOLICITUD_TICKET_SOPORTE) */
+  sharePointTickets?: boolean
+  /** Vista de la lista en SharePoint */
+  sharePointListUrl?: string
+  /** Login Microsoft (MSAL) al abrir desde Power Apps */
+  azureAuth?: AzureAuthConfig
   /** URL play de HelpDesk para abrir la pantalla desde el chat */
   helpdeskPowerAppsUrl?: string
+}
+
+function userSessionBody(session?: UserSessionPayload): UserSessionPayload {
+  if (!session) return {}
+  const out: UserSessionPayload = {}
+  if (session.userEmail) out.userEmail = session.userEmail
+  if (session.userName) out.userName = session.userName
+  if (session.accessToken) out.accessToken = session.accessToken
+  if (session.jobTitle) out.jobTitle = session.jobTitle
+  if (session.department) out.department = session.department
+  if (session.officeLocation) out.officeLocation = session.officeLocation
+  if (session.phone) out.phone = session.phone
+  return out
 }
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -89,19 +124,19 @@ export type ChatApiResponse = {
 
 export async function postChat(
   messages: ChatMessage[],
-  userEmail?: string,
+  session?: UserSessionPayload,
 ): Promise<ChatApiResponse> {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, userEmail: userEmail || '' }),
+    body: JSON.stringify({ messages, ...userSessionBody(session) }),
   })
   return parseJson(res)
 }
 
 export async function createTicketConfirm(
   draft: TicketDraft,
-  userEmail?: string,
+  session?: UserSessionPayload,
 ): Promise<{ ticket: Ticket; email: EmailSendResult }> {
   const res = await fetch('/api/tickets', {
     method: 'POST',
@@ -112,7 +147,7 @@ export async function createTicketConfirm(
       category: draft.category,
       priority: draft.priority,
       possibleSolutions: draft.possibleSolutions,
-      userEmail: userEmail || '',
+      ...userSessionBody(session),
     }),
   })
   return parseJson(res)

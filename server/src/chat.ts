@@ -7,8 +7,13 @@ import {
   faqsToPromptBlock,
 } from './faqMatch.js'
 import { createTicket } from './tickets.js'
-import { sendTicketCreatedEmail, type EmailSendResult } from './email.js'
+import {
+  emailNotificationsEnabled,
+  sendTicketCreatedEmail,
+  type EmailSendResult,
+} from './email.js'
 import { ticketsFromPortalEnabled } from './features.js'
+import { getSharePointListUrl, sharePointTicketsEnabled } from './sharepoint.js'
 import {
   buildFallbackDeepLink,
   buildPowerAppsDeepLink,
@@ -116,15 +121,23 @@ const openHelpdeskLinkTool = {
   },
 }
 
+function azureOpenAIDeployment(): string | undefined {
+  return (
+    process.env.AZURE_OPENAI_DEPLOYMENT_NAME?.trim() ||
+    process.env.AZURE_OPENAI_DEPLOYMENT?.trim() ||
+    undefined
+  )
+}
+
 function getClient(): OpenAI {
   const endpoint = (process.env.AZURE_OPENAI_ENDPOINT ?? '').replace(/\/$/, '')
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_NAME
+  const deployment = azureOpenAIDeployment()
   const apiKey = process.env.AZURE_OPENAI_API_KEY
   const apiVersion =
     process.env.AZURE_OPENAI_API_VERSION ?? '2024-08-01-preview'
   if (!endpoint || !deployment || !apiKey) {
     throw new Error(
-      'Faltan variables AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME o AZURE_OPENAI_API_KEY',
+      'Faltan variables AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT (o AZURE_OPENAI_DEPLOYMENT_NAME) o AZURE_OPENAI_API_KEY',
     )
   }
   return new OpenAI({
@@ -148,6 +161,7 @@ function resolveHelpdeskUrlForResponse(
   helpdeskConfigured: boolean,
   requestMessages: ChatCompletionMessageParam[],
   userEmail?: string,
+  userName?: string,
 ): string | undefined {
   if (portalTickets || !helpdeskConfigured) return undefined
   if (toolUrl) return toolUrl
@@ -155,6 +169,7 @@ function resolveHelpdeskUrlForResponse(
     buildFallbackDeepLink(
       lastUserMessagePlainText(requestMessages),
       userEmail,
+      userName,
     ) ?? undefined
   )
 }
@@ -174,6 +189,11 @@ function parseTicketArgs(args: Record<string, unknown>): TicketDraftPayload {
 export async function runChat(params: {
   messages: ChatCompletionMessageParam[]
   userEmail?: string
+  userName?: string
+  jobTitle?: string
+  department?: string
+  officeLocation?: string
+  phone?: string
 }): Promise<{
   message: string
   ticketId?: string
@@ -186,11 +206,23 @@ export async function runChat(params: {
   const userBlob = collectUserText(params.messages)
   const relevantFaqs = await selectRelevantFaqs(userBlob, 3)
   const faqBlock = faqsToPromptBlock(relevantFaqs)
+  const noFaqMatch = relevantFaqs.length === 0
   const portalTickets = ticketsFromPortalEnabled()
+  const sharePointTickets = sharePointTicketsEnabled()
   const helpdeskDeepLink = hasHelpdeskPowerAppsUrl()
+  const sharePointListUrl = getSharePointListUrl()
 
-  const ticketPolicyPortal = `Cuando haga falta escalamiento o un ticket, usa por defecto la herramienta **propose_ticket**: el usuario confirmará con el botón «Sí, generar ticket» en la interfaz. Explica brevemente que puede pulsar el botón para crear el ticket.
+  const ticketDestination = sharePointTickets
+    ? 'la lista de SharePoint de Mesa de Servicios (RPA_SOLICITUD_TICKET_SOPORTE)'
+    : 'el sistema de tickets del portal'
+
+  const ticketPolicyPortal = `Cuando haga falta escalamiento o un ticket, usa por defecto la herramienta **propose_ticket**: el usuario confirmará con el botón «Sí, generar ticket» en la interfaz. El ticket se registrará en ${ticketDestination}. Explica brevemente que puede pulsar el botón para crear el ticket con los datos que la IA preparó.
 Usa **create_ticket** solo si el usuario escribió de forma explícita que quiere crear el ticket ya en este mensaje (p. ej. confirma sin ambigüedad tras haber visto la propuesta).`
+
+  const noFaqTicketPolicy =
+    noFaqMatch && portalTickets
+      ? `La consulta del usuario **no encaja con ninguna FAQ oficial**. Revisa la base de conocimiento; si no hay solución clara, el problema requiere intervención humana o el usuario pide escalamiento, usa **propose_ticket** para que confirme la creación del ticket en ${ticketDestination}. No inventes pasos técnicos que no estén en la base.`
+      : ''
 
   const helpdeskLinkInstruction = helpdeskDeepLink
     ? `
@@ -208,8 +240,10 @@ Sé breve y empático. Si en tu contexto aparecen **FAQ oficiales** y la consult
 Para el resto, usa la base de conocimiento parametrizada que viene después de las FAQ (si las hay).
 Si el usuario envía una imagen o captura, analízala (texto visible, códigos de error, ventanas) y propón solución concreta.
 Cuando el problema parezca un error en pantalla, mensaje del sistema, código o interfaz y aún NO conste ninguna imagen en los mensajes del usuario sobre ese incidente, pide amablemente una captura de pantalla antes de sugerir escalamiento; explica que puede usar «Captura del error» o pegar con Ctrl+V. Si el usuario indica que no puede adjuntar imagen, continúa con lo que tengas.
+${noFaqTicketPolicy}
 ${portalTickets ? ticketPolicyPortal : ticketPolicyHelpdesk}
 ${portalTickets ? 'Indica el ANS (horas de primera respuesta) según la prioridad usando la tabla de la base.' : ''}
+${sharePointListUrl ? `Tras crear un ticket, puedes mencionar que quedó registrado en SharePoint (lista de soporte).` : ''}
 No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta con la plantilla HelpDesk.`,
   ]
   if (faqBlock) systemParts.push(faqBlock)
@@ -221,7 +255,7 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
   }
 
   const client = getClient()
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_NAME!
+  const deployment = azureOpenAIDeployment()!
 
   let messages: ChatCompletionMessageParam[] = [system, ...params.messages]
   let lastTicketId: string | undefined
@@ -316,10 +350,17 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
             ansHours,
             possibleSolutions: d.possibleSolutions,
             userEmail: params.userEmail,
+            userName: params.userName,
+            jobTitle: params.jobTitle,
+            department: params.department,
+            officeLocation: params.officeLocation,
+            phone: params.phone,
           })
           lastTicketId = ticket.id
           lastTicketDraft = undefined
-          lastEmailResult = await sendTicketCreatedEmail(ticket)
+          lastEmailResult = emailNotificationsEnabled()
+            ? await sendTicketCreatedEmail(ticket)
+            : undefined
 
           messages.push({
             role: 'tool',
@@ -379,6 +420,7 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
       helpdeskDeepLink,
       params.messages,
       params.userEmail,
+      params.userName,
     )
     const text =
       rawText ||
@@ -400,6 +442,7 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
     helpdeskDeepLink,
     params.messages,
     params.userEmail,
+    params.userName,
   )
   return {
     message: portalTickets

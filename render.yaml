@@ -23,12 +23,28 @@ services:
         sync: false
       - key: AZURE_OPENAI_API_VERSION
         value: 2025-01-01-preview
+      - key: AZURE_OPENAI_DEPLOYMENT
+        sync: false
       - key: AZURE_OPENAI_DEPLOYMENT_NAME
         sync: false
       - key: TICKET_NOTIFY_EMAIL
         value: angiepena@cbit-online.com
       - key: TICKETS_FROM_PORTAL_ENABLED
         value: "false"
+      # SharePoint (lista RPA_SOLICITUD_TICKET_SOPORTE): habilita tickets con IA cuando no hay FAQ
+      - key: AZURE_TENANT_ID
+        sync: false
+      - key: SHAREPOINT_CLIENT_ID
+        sync: false
+      - key: SHAREPOINT_CLIENT_SECRET
+        sync: false
+      - key: SHAREPOINT_SITE_URL
+        value: https://periferiaitgroup.sharepoint.com/sites/Infraestructura
+      - key: SHAREPOINT_LIST_NAME
+        value: RPA_SOLICITUD_TICKET_SOPORTE
+      # Login Microsoft (mismo client id que SharePoint si no define AZURE_CLIENT_ID)
+      - key: AZURE_AUTH_ENABLED
+        value: "true"
       # URL play de HelpDesk (Power Apps); habilita enlace profundo + herramienta open_helpdesk_link
       - key: HELPDESK_POWERAPPS_URL
         sync: false

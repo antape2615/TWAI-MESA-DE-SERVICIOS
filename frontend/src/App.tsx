@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ClipboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ClipboardEvent } from 'react'
 import './App.css'
 import {
   postChat,
@@ -12,6 +12,13 @@ import {
   type KnowledgePayload,
   type KnowledgeEntry,
 } from './api'
+import {
+  microsoftSignInHint,
+  readInitialUserSession,
+  resolveUserSession,
+  shouldOfferMicrosoftSignIn,
+  type UserSession,
+} from './userContext'
 import { readDisplayNameFromUrl } from './urlDisplayName'
 
 /** Pestaña "Parámetros": oculta hasta definir acceso por usuario/rol */
@@ -59,12 +66,35 @@ function SendPlaneIcon() {
   )
 }
 
+function MicrosoftIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+  )
+}
+
 function ChatSection({
   ticketsFromPortal,
   helpdeskDeepLink,
+  sharePointListUrl,
+  userSession,
+  showMicrosoftSignIn,
+  authHint,
+  authLoading,
+  onSignIn,
 }: {
   ticketsFromPortal: boolean
   helpdeskDeepLink: boolean
+  sharePointListUrl?: string
+  userSession: UserSession
+  showMicrosoftSignIn: boolean
+  authHint: string | null
+  authLoading: boolean
+  onSignIn: () => void
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -73,20 +103,28 @@ function ChatSection({
   const [loading, setLoading] = useState(false)
   const [confirmingIndex, setConfirmingIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [mailNotice, setMailNotice] = useState<string | null>(null)
 
-  const [visitorName, setVisitorName] = useState(() => readDisplayNameFromUrl())
-
-  useEffect(() => {
-    const sync = () => setVisitorName(readDisplayNameFromUrl())
-    sync()
-    window.addEventListener('hashchange', sync)
-    window.addEventListener('popstate', sync)
-    return () => {
-      window.removeEventListener('hashchange', sync)
-      window.removeEventListener('popstate', sync)
-    }
-  }, [])
+  const sessionPayload = useMemo(
+    () => ({
+      userEmail: userSession.email || undefined,
+      userName: userSession.name || undefined,
+      accessToken: userSession.accessToken,
+      jobTitle: userSession.jobTitle,
+      department: userSession.department,
+      officeLocation: userSession.officeLocation,
+      phone: userSession.phone,
+    }),
+    [userSession],
+  )
+  const visitorName = useMemo(() => {
+    const fromSession = userSession.name?.trim()
+    if (fromSession) return fromSession
+    const fromUrl = readDisplayNameFromUrl().trim()
+    if (fromUrl) return fromUrl
+    const email = userSession.email?.trim()
+    if (email?.includes('@')) return email.split('@')[0] ?? ''
+    return ''
+  }, [userSession.name, userSession.email])
 
   const onPickImage = useCallback((file: File | null) => {
     setPreviewUrl((prev) => {
@@ -129,7 +167,6 @@ function ChatSection({
     const trimmed = input.trim()
     if ((!trimmed && !pendingFile) || loading) return
     setError(null)
-    setMailNotice(null)
     let image: ChatMessage['image']
     try {
       if (pendingFile) image = await fileToImagePayload(pendingFile)
@@ -147,7 +184,7 @@ function ChatSection({
     setPendingFile(null)
     setLoading(true)
     try {
-      const res = await postChat(next)
+      const res = await postChat(next, sessionPayload)
       setMessages([
         ...next,
         {
@@ -158,17 +195,12 @@ function ChatSection({
           ...(res.helpdeskUrl ? { helpdeskUrl: res.helpdeskUrl } : {}),
         },
       ])
-      if (res.ticketId && res.email && !res.email.sent) {
-        setMailNotice(
-          `Ticket ${res.ticketId} creado, pero el aviso por correo no se envió: ${res.email.error ?? 'configure RESEND_API_KEY o SMTP en el servidor'}.`,
-        )
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al enviar')
     } finally {
       setLoading(false)
     }
-  }, [input, loading, messages, pendingFile, previewUrl])
+  }, [input, loading, messages, pendingFile, previewUrl, sessionPayload])
 
   const onConfirmTicket = useCallback(
     async (messageIndex: number, draft: TicketDraft) => {
@@ -176,7 +208,7 @@ function ChatSection({
       setConfirmingIndex(messageIndex)
       setError(null)
       try {
-        const { ticket, email } = await createTicketConfirm(draft)
+        const { ticket } = await createTicketConfirm(draft, sessionPayload)
         setMessages((prev) =>
           prev.map((msg, i) =>
             i === messageIndex
@@ -188,20 +220,13 @@ function ChatSection({
               : msg,
           ),
         )
-        if (!email.sent) {
-          setMailNotice(
-            `Ticket ${ticket.id} creado, pero el correo no se envió: ${email.error ?? 'configure RESEND_API_KEY o SMTP'}.`,
-          )
-        } else {
-          setMailNotice(null)
-        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'No se pudo crear el ticket')
       } finally {
         setConfirmingIndex(null)
       }
     },
-    [confirmingIndex],
+    [confirmingIndex, sessionPayload],
   )
 
   const onDismissTicket = useCallback((messageIndex: number) => {
@@ -224,16 +249,55 @@ function ChatSection({
           Asistente HelpDesk Periferia IT
         </h2>
         <header className="chatbot-card__header">
-          <div className="chatbot-logo" aria-hidden>
-            <div className="chatbot-logo__mark">
-              <img className="chatbot-logo__img" src="/logohelpdesk.png" alt="" />
+          <div className="chatbot-card__header-top">
+            <div className="chatbot-logo" aria-hidden>
+              <div className="chatbot-logo__mark">
+                <img className="chatbot-logo__img" src="/logohelpdesk.png" alt="" />
+              </div>
+              <div className="chatbot-logo__text">
+                <span className="chatbot-logo__title">HelpDesk</span>
+                <span className="chatbot-logo__subtitle">Periferia IT</span>
+              </div>
             </div>
-            <div className="chatbot-logo__text">
-              <span className="chatbot-logo__title">HelpDesk</span>
-              <span className="chatbot-logo__subtitle">Periferia IT</span>
-            </div>
+            <p className="chatbot-card__greeting">{greeting}</p>
           </div>
-          <p className="chatbot-card__greeting">{greeting}</p>
+          {userSession.jobTitle || userSession.department ? (
+            <p className="chatbot-card__role">
+              {[userSession.jobTitle, userSession.department].filter(Boolean).join(' · ')}
+            </p>
+          ) : null}
+          {userSession.graphProfile || userSession.accountProfile ? (
+            <details className="chatbot-profile-details">
+              <summary>Datos de sesión Microsoft</summary>
+              <dl className="chatbot-profile-dl">
+                <dt>Puesto / título</dt>
+                <dd>{userSession.graphProfile?.jobTitle?.trim() || '—'}</dd>
+                <dt>Departamento</dt>
+                <dd>{userSession.graphProfile?.department?.trim() || '—'}</dd>
+                <dt>Ubicación</dt>
+                <dd>{userSession.graphProfile?.officeLocation?.trim() || '—'}</dd>
+                <dt>Correo</dt>
+                <dd>
+                  {userSession.graphProfile?.mail?.trim() ||
+                    userSession.graphProfile?.userPrincipalName?.trim() ||
+                    userSession.email ||
+                    '—'}
+                </dd>
+                <dt>Nombre</dt>
+                <dd>{userSession.accountProfile?.displayName || userSession.name || '—'}</dd>
+              </dl>
+            </details>
+          ) : null}
+          {showMicrosoftSignIn && !authLoading ? (
+            <button type="button" className="ms-signin-btn" onClick={onSignIn}>
+              <MicrosoftIcon />
+              Iniciar sesión con Microsoft
+            </button>
+          ) : null}
+          {authHint ? <p className="chatbot-card__auth-hint">{authHint}</p> : null}
+          {authLoading ? (
+            <p className="chatbot-card__auth-hint">Verificando sesión…</p>
+          ) : null}
         </header>
         <p className="chatbot-card__hint">
           Describa el error o adjunte una captura (pegar con Ctrl+V / Cmd+V).{' '}
@@ -244,7 +308,6 @@ function ChatSection({
               : 'El registro formal del caso es en HelpDesk cuando el asistente lo indique.'}
         </p>
         {error ? <div className="error-banner chatbot-banner">{error}</div> : null}
-        {mailNotice ? <div className="warning-banner chatbot-banner">{mailNotice}</div> : null}
         <div className="chat-messages">
           {messages.length === 0 ? (
             <p className="empty-state">Escriba su consulta para comenzar.</p>
@@ -283,7 +346,17 @@ function ChatSection({
                       <p className="bubble-text">{m.content}</p>
                       {ticketsFromPortal && m.ticketCreatedId ? (
                         <p className="ticket-created-note">
-                          Ticket <strong>{m.ticketCreatedId}</strong> creado.
+                          Ticket <strong>{m.ticketCreatedId}</strong> creado
+                          {sharePointListUrl ? (
+                            <>
+                              {' '}
+                              en{' '}
+                              <a href={sharePointListUrl} target="_blank" rel="noreferrer">
+                                SharePoint
+                              </a>
+                            </>
+                          ) : null}
+                          .
                         </p>
                       ) : null}
                       {ticketsFromPortal && m.ticketDraft && !m.ticketCreatedId ? (
@@ -566,28 +639,73 @@ function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [ticketsFromPortal, setTicketsFromPortal] = useState(false)
   const [helpdeskDeepLink, setHelpdeskDeepLink] = useState(false)
+  const [sharePointListUrl, setSharePointListUrl] = useState<string | undefined>()
+  const [appConfig, setAppConfig] = useState<Awaited<ReturnType<typeof fetchAppConfig>> | null>(
+    null,
+  )
+  const [userSession, setUserSession] = useState<UserSession>(readInitialUserSession)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authHint, setAuthHint] = useState<string | null>(null)
 
   useEffect(() => {
     if (!SHOW_KNOWLEDGE_TAB && tab === 'knowledge') setTab('chat')
   }, [tab])
 
+  const loadSession = useCallback(
+    async (config: NonNullable<typeof appConfig>, interactive = false) => {
+      setAuthLoading(true)
+      setAuthHint(microsoftSignInHint(config))
+      try {
+        const session = await resolveUserSession(config, { interactive })
+        setUserSession(session)
+        if (interactive && !session.email) {
+          setAuthHint(
+            'No se pudo iniciar sesión. Verifique en Azure AD que la app tenga plataforma SPA y redirect URI ' +
+              `${window.location.origin}/`,
+          )
+        }
+      } finally {
+        setAuthLoading(false)
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
     void fetchAppConfig()
-      .then((c) => {
+      .then(async (c) => {
+        setAppConfig(c)
         setTicketsFromPortal(c.ticketsFromPortal)
         setHelpdeskDeepLink(c.helpdeskDeepLink)
+        setSharePointListUrl(c.sharePointListUrl)
+        await loadSession(c, false)
       })
       .catch(() => {
         setTicketsFromPortal(false)
         setHelpdeskDeepLink(false)
+        setSharePointListUrl(undefined)
+        setAuthLoading(false)
       })
-  }, [])
+  }, [loadSession])
 
   return (
     <div className="app-shell">
       <main className={tab === 'chat' ? 'main--chat' : undefined}>
         {tab === 'chat' ? (
-          <ChatSection ticketsFromPortal={ticketsFromPortal} helpdeskDeepLink={helpdeskDeepLink} />
+          <ChatSection
+            ticketsFromPortal={ticketsFromPortal}
+            helpdeskDeepLink={helpdeskDeepLink}
+            sharePointListUrl={sharePointListUrl}
+            userSession={userSession}
+            showMicrosoftSignIn={
+              appConfig ? shouldOfferMicrosoftSignIn(appConfig, userSession) : false
+            }
+            authHint={authHint}
+            authLoading={authLoading}
+            onSignIn={() => {
+              if (appConfig) void loadSession(appConfig, true)
+            }}
+          />
         ) : null}
         {SHOW_KNOWLEDGE_TAB && tab === 'knowledge' ? <KnowledgeSection /> : null}
       </main>

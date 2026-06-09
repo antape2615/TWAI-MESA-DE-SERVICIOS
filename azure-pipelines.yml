@@ -1,10 +1,43 @@
 trigger:
 - main
 
+# ── Variables del pipeline ──────────────────────────────────────────────────
+# 1) En Azure DevOps: Pipelines → Library → + Variable group
+#    Nombre sugerido: mesa-servicios-vars
+# 2) Agregue las variables (marque como "secreto" las que llevan 🔒):
+#
+#    Obligatorias (chat):
+#      AZURE_OPENAI_ENDPOINT
+#      AZURE_OPENAI_API_KEY 🔒
+#      AZURE_OPENAI_DEPLOYMENT   (o AZURE_OPENAI_DEPLOYMENT_NAME)
+#      AZURE_OPENAI_API_VERSION  (ej. 2025-01-01-preview)
+#
+#    SharePoint + login Microsoft:
+#      AZURE_TENANT_ID
+#      SHAREPOINT_CLIENT_ID
+#      SHAREPOINT_CLIENT_SECRET 🔒
+#      SHAREPOINT_SITE_URL       (https://periferiaitgroup.sharepoint.com/sites/Infraestructura)
+#      SHAREPOINT_LIST_NAME      (RPA_SOLICITUD_TICKET_SOPORTE)
+#
+#    Opcionales:
+#      HELPDESK_POWERAPPS_URL
+#      TICKETS_FROM_PORTAL_ENABLED (false)
+#      AZURE_AUTH_ENABLED          (true por defecto si hay tenant)
+#      TICKET_NOTIFY_EMAIL
+#      RESEND_API_KEY 🔒 / SMTP_* (solo si activa correo)
+#
+# 3) En el pipeline: autorice el variable group (permisos).
+# 4) Redirect URI SPA en Entra ID: https://AS-MESA-SERVICIOS.azurewebsites.net/
+# ────────────────────────────────────────────────────────────────────────────
+
 variables:
-  azureSubscription: 'PERIFERIA_IT_GROUP_CCB4' # Asegúrate de que esta conexión funcione
-  webAppName: 'AS-MESA-SERVICIOS'
-  nodeVersion: '20.x'
+- group: mesa-servicios-vars
+- name: azureSubscription
+  value: 'PERIFERIA_IT_GROUP_CCB4'
+- name: webAppName
+  value: 'AS-MESA-SERVICIOS'
+- name: nodeVersion
+  value: '20.x'
 
 stages:
 - stage: Build
@@ -19,13 +52,10 @@ stages:
       displayName: 'Install Node.js'
 
     - script: |
-        npm install
+        NPM_CONFIG_PRODUCTION=false npm install
         npm run build
-      displayName: 'Install and Build'
-
-    - script: |
         npm prune --omit=dev
-      displayName: 'Remove dev dependencies'
+      displayName: 'Install, build y prune'
 
     - task: ArchiveFiles@2
       inputs:
@@ -50,11 +80,29 @@ stages:
       artifact: drop
 
     - task: AzureWebApp@1
-      displayName: 'Azure Web App Deploy'
-      continueOnError: true
+      displayName: 'Deploy + variables de entorno'
       inputs:
         azureSubscription: $(azureSubscription)
         appType: 'webAppLinux'
         appName: $(webAppName)
         package: '$(Pipeline.Workspace)/drop/app.zip'
-
+        runtimeStack: 'NODE|20-lts'
+        startUpCommand: 'npm start'
+        appSettings: |
+          -NODE_ENV production
+          -SCM_DO_BUILD_DURING_DEPLOYMENT false
+          -WEBSITES_PORT 8080
+          -AZURE_OPENAI_ENDPOINT $(AZURE_OPENAI_ENDPOINT)
+          -AZURE_OPENAI_API_KEY $(AZURE_OPENAI_API_KEY)
+          -AZURE_OPENAI_DEPLOYMENT $(AZURE_OPENAI_DEPLOYMENT)
+          -AZURE_OPENAI_DEPLOYMENT_NAME $(AZURE_OPENAI_DEPLOYMENT_NAME)
+          -AZURE_OPENAI_API_VERSION $(AZURE_OPENAI_API_VERSION)
+          -AZURE_TENANT_ID $(AZURE_TENANT_ID)
+          -SHAREPOINT_CLIENT_ID $(SHAREPOINT_CLIENT_ID)
+          -SHAREPOINT_CLIENT_SECRET $(SHAREPOINT_CLIENT_SECRET)
+          -SHAREPOINT_SITE_URL $(SHAREPOINT_SITE_URL)
+          -SHAREPOINT_LIST_NAME $(SHAREPOINT_LIST_NAME)
+          -HELPDESK_POWERAPPS_URL $(HELPDESK_POWERAPPS_URL)
+          -TICKETS_FROM_PORTAL_ENABLED $(TICKETS_FROM_PORTAL_ENABLED)
+          -AZURE_AUTH_ENABLED $(AZURE_AUTH_ENABLED)
+          -TICKET_NOTIFY_EMAIL $(TICKET_NOTIFY_EMAIL)
