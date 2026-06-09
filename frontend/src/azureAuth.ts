@@ -10,7 +10,33 @@ let msalReady: Promise<PublicClientApplication | null> | null = null
 let redirectChecked = false
 let redirectResult: AuthenticationResult | null = null
 
-const SCOPES = ['User.Read']
+/** Graph: perfil + /sites/.../users. SharePoint: ensureuser para SolicitadoPor. */
+const GRAPH_SCOPES = ['User.Read', 'Sites.ReadWrite.All']
+
+function sharePointScopes(host: string): string[] {
+  return [`${host.replace(/\/$/, '')}/AllSites.Write`]
+}
+
+function allTicketScopes(sharePointHost?: string): string[] {
+  if (!sharePointHost) return GRAPH_SCOPES
+  return [...GRAPH_SCOPES, ...sharePointScopes(sharePointHost)]
+}
+
+function isInteractionRequired(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { errorCode?: string; name?: string }
+  return (
+    e.errorCode === 'interaction_required' ||
+    e.errorCode === 'consent_required' ||
+    e.errorCode === 'login_required' ||
+    e.name === 'InteractionRequiredAuthError'
+  )
+}
+
+export type TicketAuthTokens = {
+  accessToken?: string
+  sharePointAccessToken?: string
+}
 
 function redirectUri(): string {
   return `${window.location.origin}/`
@@ -103,10 +129,82 @@ function cleanAuthFromUrl(): void {
 async function acquireSilent(
   app: PublicClientApplication,
   account: AccountInfo,
+  sharePointHost?: string,
 ): Promise<AuthenticationResult | null> {
   try {
-    return await app.acquireTokenSilent({ scopes: SCOPES, account })
+    return await app.acquireTokenSilent({
+      scopes: allTicketScopes(sharePointHost),
+      account,
+    })
   } catch {
+    return null
+  }
+}
+
+async function acquireSharePointSilent(
+  app: PublicClientApplication,
+  account: AccountInfo,
+  sharePointHost: string,
+): Promise<string | undefined> {
+  try {
+    const result = await app.acquireTokenSilent({
+      scopes: sharePointScopes(sharePointHost),
+      account,
+    })
+    return result.accessToken
+  } catch {
+    return undefined
+  }
+}
+
+/** Tokens con permisos para rellenar Solicitado Por en SharePoint. */
+export async function acquireTicketAuthTokens(
+  config: AppConfig,
+  loginHint?: string,
+): Promise<TicketAuthTokens | null> {
+  const redirect = await processRedirectReturn(config)
+  const app = await getMsal(config)
+  if (!app) return null
+
+  const host = config.sharePointResourceOrigin
+  let account = redirect?.account ?? app.getAllAccounts()[0] ?? null
+
+  if (!account && loginHint?.includes('@')) {
+    try {
+      const sso = await app.ssoSilent({
+        scopes: allTicketScopes(host),
+        loginHint,
+      })
+      account = sso.account
+    } catch {
+      /* sin cuenta */
+    }
+  }
+
+  if (!account) return null
+
+  try {
+    const graph = await app.acquireTokenSilent({
+      scopes: allTicketScopes(host),
+      account,
+    })
+    const sharePointAccessToken =
+      host != null ? await acquireSharePointSilent(app, account, host) : undefined
+    return {
+      accessToken: graph.accessToken,
+      sharePointAccessToken,
+    }
+  } catch (err) {
+    if (!isInteractionRequired(err)) return null
+    try {
+      await app.acquireTokenRedirect({
+        scopes: allTicketScopes(host),
+        account,
+        prompt: 'consent',
+      })
+    } catch (e) {
+      console.error('[auth] No se pudo renovar consentimiento SharePoint:', e)
+    }
     return null
   }
 }
@@ -121,15 +219,16 @@ export async function trySilentAuth(
   const app = await getMsal(config)
   if (!app) return null
 
+  const host = config.sharePointResourceOrigin
   const accounts = app.getAllAccounts()
   if (accounts.length > 0) {
-    const token = await acquireSilent(app, accounts[0])
+    const token = await acquireSilent(app, accounts[0], host)
     if (token) return token
   }
 
   if (loginHint?.includes('@')) {
     try {
-      return await app.ssoSilent({ scopes: SCOPES, loginHint })
+      return await app.ssoSilent({ scopes: allTicketScopes(host), loginHint })
     } catch {
       return null
     }
@@ -148,7 +247,11 @@ export async function signInWithRedirect(
   const app = await getMsal(config)
   if (!app) return null
 
-  const request = { scopes: SCOPES, loginHint }
+  const request = {
+    scopes: allTicketScopes(config.sharePointResourceOrigin),
+    loginHint,
+    prompt: 'consent' as const,
+  }
 
   if (isEmbeddedFrame()) {
     try {

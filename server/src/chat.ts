@@ -194,6 +194,8 @@ export async function runChat(params: {
   department?: string
   officeLocation?: string
   phone?: string
+  accessToken?: string
+  sharePointAccessToken?: string
 }): Promise<{
   message: string
   ticketId?: string
@@ -355,6 +357,8 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
             department: params.department,
             officeLocation: params.officeLocation,
             phone: params.phone,
+            accessToken: params.accessToken,
+            sharePointAccessToken: params.sharePointAccessToken,
           })
           lastTicketId = ticket.id
           lastTicketDraft = undefined

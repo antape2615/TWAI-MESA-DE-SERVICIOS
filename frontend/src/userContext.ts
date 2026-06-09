@@ -2,6 +2,7 @@ import type { AccountInfo } from '@azure/msal-browser'
 import type { AppConfig } from './api'
 import {
   accountFromResult,
+  acquireTicketAuthTokens,
   isEmbeddedFrame,
   signInWithRedirect,
   trySilentAuth,
@@ -18,6 +19,7 @@ export type UserSession = {
   name: string
   email: string
   accessToken?: string
+  sharePointAccessToken?: string
   source: 'azure' | 'url' | 'none'
   jobTitle?: string
   department?: string
@@ -95,7 +97,15 @@ export async function resolveUserSession(
         accessToken: fromAzure.accessToken,
         source: 'azure',
       }
-      return enrichWithGraph(base, fromAzure.accessToken, silent?.account)
+      const enriched = await enrichWithGraph(base, fromAzure.accessToken, silent?.account)
+      if (config.sharePointTickets && config.sharePointResourceOrigin) {
+        const tokens = await acquireTicketAuthTokens(config, enriched.email || fromUrl.email)
+        if (tokens?.accessToken) enriched.accessToken = tokens.accessToken
+        if (tokens?.sharePointAccessToken) {
+          enriched.sharePointAccessToken = tokens.sharePointAccessToken
+        }
+      }
+      return enriched
     }
 
     if (options.interactive) {
@@ -108,6 +118,23 @@ export async function resolveUserSession(
   if (urlSession) return urlSession
 
   return emptySession()
+}
+
+/** Renueva tokens Graph + SharePoint antes de crear un ticket. */
+export async function refreshTicketAuthTokens(
+  config: AppConfig,
+  session: UserSession,
+): Promise<UserSession> {
+  if (!config.azureAuth?.enabled || !config.sharePointTickets) return session
+  const tokens = await acquireTicketAuthTokens(config, session.email || undefined)
+  if (!tokens) return session
+  return {
+    ...session,
+    ...(tokens.accessToken ? { accessToken: tokens.accessToken } : {}),
+    ...(tokens.sharePointAccessToken
+      ? { sharePointAccessToken: tokens.sharePointAccessToken }
+      : {}),
+  }
 }
 
 export function shouldOfferMicrosoftSignIn(

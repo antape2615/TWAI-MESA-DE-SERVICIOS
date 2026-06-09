@@ -9,6 +9,7 @@ import { runChat } from './chat.js'
 import { ticketsFromPortalEnabled } from './features.js'
 import {
   getSharePointListUrl,
+  getSharePointResourceOrigin,
   logSharePointStartupHint,
   sharePointTicketsEnabled,
 } from './sharepoint.js'
@@ -35,11 +36,13 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/config', (_req, res) => {
   const helpdeskUrl = getHelpdeskPowerAppsUrl()
   const sharePointListUrl = getSharePointListUrl()
+  const sharePointResourceOrigin = getSharePointResourceOrigin()
   res.json({
     ticketsFromPortal: ticketsFromPortalEnabled(),
     helpdeskDeepLink: hasHelpdeskPowerAppsUrl(),
     sharePointTickets: sharePointTicketsEnabled(),
     azureAuth: getAzureAuthConfig(),
+    ...(sharePointResourceOrigin ? { sharePointResourceOrigin } : {}),
     ...(sharePointListUrl ? { sharePointListUrl } : {}),
     ...(helpdeskUrl ? { helpdeskPowerAppsUrl: helpdeskUrl } : {}),
   })
@@ -64,6 +67,7 @@ const CreateTicketBodySchema = z.object({
   userEmail: z.union([z.string().email(), z.literal('')]).optional(),
   userName: z.string().optional(),
   accessToken: z.string().optional(),
+  sharePointAccessToken: z.string().optional(),
   jobTitle: z.string().optional(),
   department: z.string().optional(),
   officeLocation: z.string().optional(),
@@ -104,6 +108,8 @@ app.post('/api/tickets', async (req, res) => {
       department: user.department,
       officeLocation: user.officeLocation,
       phone: user.phone,
+      accessToken: parsed.data.accessToken,
+      sharePointAccessToken: parsed.data.sharePointAccessToken,
     })
     const email = emailNotificationsEnabled()
       ? await sendTicketCreatedEmail(ticket)
@@ -176,6 +182,7 @@ const ChatSchema = z.object({
   userEmail: z.union([z.string().email(), z.literal('')]).optional(),
   userName: z.string().optional(),
   accessToken: z.string().optional(),
+  sharePointAccessToken: z.string().optional(),
   jobTitle: z.string().optional(),
   department: z.string().optional(),
   officeLocation: z.string().optional(),
@@ -243,6 +250,8 @@ app.post('/api/chat', async (req, res) => {
       department: user.department,
       officeLocation: user.officeLocation,
       phone: user.phone,
+      accessToken: parsed.data.accessToken,
+      sharePointAccessToken: parsed.data.sharePointAccessToken,
     })
     res.json(result)
   } catch (e) {

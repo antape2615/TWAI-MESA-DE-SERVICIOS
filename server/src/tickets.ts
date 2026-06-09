@@ -69,6 +69,8 @@ export async function createTicket(input: {
   department?: string
   officeLocation?: string
   phone?: string
+  accessToken?: string
+  sharePointAccessToken?: string
 }): Promise<Ticket> {
   if (sharePointTicketsEnabled()) {
     return createSharePointTicket(input)

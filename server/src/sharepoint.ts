@@ -57,6 +57,17 @@ export function logSharePointStartupHint(): void {
   )
 }
 
+/** Origen del sitio SharePoint (p. ej. https://periferiaitgroup.sharepoint.com). */
+export function getSharePointResourceOrigin(): string | null {
+  const site = env('SHAREPOINT_SITE_URL')
+  if (!site?.startsWith('http')) return null
+  try {
+    return new URL(site).origin
+  } catch {
+    return null
+  }
+}
+
 export function getSharePointListUrl(): string | null {
   const explicit = env('SHAREPOINT_LIST_URL')
   if (explicit?.startsWith('http')) return explicit
@@ -183,19 +194,253 @@ async function resolveListId(siteId: string): Promise<string> {
   return list.id
 }
 
-/** ID de usuario en el sitio SharePoint (columna SolicitadoPorLookupId). */
-async function resolveSiteUserLookupId(
+type LookupCache = { at: number; byName: Map<string, number> }
+let lookupCache: LookupCache | null = null
+const LOOKUP_CACHE_TTL_MS = 10 * 60 * 1000
+
+function normalizePersonName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function personNameTokens(value: string): string[] {
+  return normalizePersonName(value)
+    .split(' ')
+    .filter((t) => t.length > 1)
+}
+
+/** ID de usuario en el sitio SharePoint (columna SolicitadoPorLookupId). App-only. */
+async function resolveSiteUserLookupIdApp(
   siteId: string,
   email: string,
-): Promise<string | undefined> {
+): Promise<number | undefined> {
   try {
-    const user = await graphPost<{ id?: string }>(`/sites/${siteId}/users`, {
+    const user = await graphPost<{ id?: string | number }>(`/sites/${siteId}/users`, {
       email: email.trim(),
     })
-    return user.id?.trim() || undefined
+    const id = user.id
+    if (id == null || id === '') return undefined
+    return Number(id)
   } catch {
     return undefined
   }
+}
+
+function parseEnsureUserId(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+  const data = payload as {
+    Id?: number | string
+    d?: { Id?: number | string; EnsureUser?: { Id?: number | string } }
+  }
+  const raw = data.Id ?? data.d?.Id ?? data.d?.EnsureUser?.Id
+  if (raw == null || raw === '') return undefined
+  const id = Number(raw)
+  return Number.isNaN(id) ? undefined : id
+}
+
+function ensureUserLogonNames(email: string): string[] {
+  const trimmed = email.trim()
+  const lower = trimmed.toLowerCase()
+  const variants = trimmed === lower ? [trimmed] : [trimmed, lower]
+  const out = new Set<string>()
+  for (const e of variants) {
+    out.add(`i:0#.f|membership|${e}`)
+    out.add(e)
+  }
+  return [...out]
+}
+
+/** Con token delegado del usuario (requiere scope Sites.ReadWrite.All en MSAL). */
+async function resolveSiteUserLookupIdDelegated(
+  siteId: string,
+  email: string,
+  accessToken: string,
+): Promise<number | undefined> {
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/users`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: email.trim() }),
+    })
+    if (!res.ok) {
+      const err = await res.text().catch(() => '')
+      console.warn(`[sharepoint] Graph /sites/users delegado ${res.status}: ${err.slice(0, 200)}`)
+      return undefined
+    }
+    const user = (await res.json()) as { id?: string | number }
+    if (user.id == null || user.id === '') return undefined
+    return Number(user.id)
+  } catch (e) {
+    console.warn('[sharepoint] Graph /sites/users delegado:', e)
+    return undefined
+  }
+}
+
+/** SharePoint REST ensureuser — requiere token con audiencia SharePoint (no solo Graph). */
+async function resolveViaSharePointEnsureUser(
+  email: string,
+  accessToken: string,
+): Promise<number | undefined> {
+  const siteUrl = env('SHAREPOINT_SITE_URL')
+  if (!siteUrl) return undefined
+  const endpoint = `${siteUrl.replace(/\/$/, '')}/_api/web/ensureuser`
+
+  for (const logonName of ensureUserLogonNames(email)) {
+    for (const accept of [
+      'application/json;odata=nometadata',
+      'application/json;odata=verbose',
+    ] as const) {
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: accept,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ logonName }),
+        })
+        if (!res.ok) {
+          const err = await res.text().catch(() => '')
+          console.warn(
+            `[sharepoint] ensureuser ${res.status} (${logonName.slice(0, 40)}…): ${err.slice(0, 160)}`,
+          )
+          continue
+        }
+        const data = await res.json().catch(() => null)
+        const id = parseEnsureUserId(data)
+        if (id != null) return id
+      } catch (e) {
+        console.warn('[sharepoint] ensureuser:', e)
+      }
+    }
+  }
+
+  return undefined
+}
+
+async function buildRequesterLookupCache(
+  siteId: string,
+  listId: string,
+): Promise<Map<string, number>> {
+  const now = Date.now()
+  if (lookupCache && now - lookupCache.at < LOOKUP_CACHE_TTL_MS) {
+    return lookupCache.byName
+  }
+
+  const byName = new Map<string, number>()
+  let url: string | null =
+    `/sites/${siteId}/lists/${listId}/items?` +
+    new URLSearchParams({
+      $expand: 'fields($select=SolicitadoPorLookupId,SolicitadoPorTexto)',
+      $top: '500',
+      $orderby: 'createdDateTime desc',
+    })
+
+  type ListItemsPage = {
+    value?: Array<{ fields?: Record<string, unknown> }>
+    '@odata.nextLink'?: string
+  }
+
+  for (let page = 0; page < 6 && url; page++) {
+    const path = url.startsWith('http')
+      ? url.replace('https://graph.microsoft.com/v1.0', '')
+      : url
+    const data: ListItemsPage = await graphGet<ListItemsPage>(path)
+
+    for (const item of data.value ?? []) {
+      const text = String(item.fields?.SolicitadoPorTexto ?? '').trim()
+      const lookupRaw = item.fields?.SolicitadoPorLookupId
+      if (!text || lookupRaw == null || lookupRaw === '') continue
+      const lookupId = Number(lookupRaw)
+      if (Number.isNaN(lookupId)) continue
+      const key = normalizePersonName(text)
+      if (!byName.has(key)) byName.set(key, lookupId)
+    }
+
+    url = data['@odata.nextLink']
+      ? data['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0', '')
+      : null
+  }
+
+  lookupCache = { at: now, byName }
+  return byName
+}
+
+function matchLookupIdFromHistory(
+  userName: string,
+  cache: Map<string, number>,
+): number | undefined {
+  const norm = normalizePersonName(userName)
+  const exact = cache.get(norm)
+  if (exact != null) return exact
+
+  const tokens = personNameTokens(userName)
+  if (tokens.length < 2) return undefined
+
+  const first = tokens[0]
+  const last = tokens[tokens.length - 1]
+  let best: { id: number; score: number } | undefined
+
+  for (const [key, id] of cache) {
+    const keyTokens = personNameTokens(key)
+    if (keyTokens[0] !== first) continue
+    let score = 1
+    if (keyTokens.includes(last)) score = 10
+    else if (key.includes(last)) score = 5
+    if (!best || score > best.score) best = { id, score }
+  }
+
+  return best && best.score >= 5 ? best.id : undefined
+}
+
+async function resolveSolicitadoPorLookupId(
+  siteId: string,
+  listId: string,
+  input: {
+    email?: string
+    name?: string
+    accessToken?: string
+    sharePointAccessToken?: string
+  },
+): Promise<number | undefined> {
+  const email = input.email?.trim()
+  const name = input.name?.trim()
+  const accessToken = input.accessToken?.trim()
+  const sharePointAccessToken = input.sharePointAccessToken?.trim()
+
+  if (email && sharePointAccessToken) {
+    const ensured = await resolveViaSharePointEnsureUser(email, sharePointAccessToken)
+    if (ensured != null) return ensured
+  }
+
+  if (email && accessToken) {
+    const delegated = await resolveSiteUserLookupIdDelegated(siteId, email, accessToken)
+    if (delegated != null) return delegated
+    const ensuredGraph = await resolveViaSharePointEnsureUser(email, accessToken)
+    if (ensuredGraph != null) return ensuredGraph
+  }
+
+  if (email) {
+    const appOnly = await resolveSiteUserLookupIdApp(siteId, email)
+    if (appOnly != null) return appOnly
+  }
+
+  if (name) {
+    const cache = await buildRequesterLookupCache(siteId, listId)
+    const fromHistory = matchLookupIdFromHistory(name, cache)
+    if (fromHistory != null) return fromHistory
+  }
+
+  return undefined
 }
 
 function buildSharePointFields(input: {
@@ -211,7 +456,7 @@ function buildSharePointFields(input: {
   department?: string
   officeLocation?: string
   phone?: string
-  solicitadoPorLookupId?: string
+  solicitadoPorLookupId?: number
 }): Record<string, string | number> {
   const fields: Record<string, string | number> = {
     Title: input.title.slice(0, 255),
@@ -258,7 +503,7 @@ function buildSharePointFields(input: {
     input.userEmail?.trim() ||
     ''
   if (requesterLabel) fields[requesterTextField] = requesterLabel.slice(0, 255)
-  if (input.solicitadoPorLookupId) {
+  if (input.solicitadoPorLookupId != null) {
     fields[requesterLookupField] = input.solicitadoPorLookupId
   }
   if (input.department) fields[departmentTextField] = input.department.slice(0, 255)
@@ -288,12 +533,25 @@ export async function createSharePointTicket(input: {
   department?: string
   officeLocation?: string
   phone?: string
+  accessToken?: string
+  sharePointAccessToken?: string
 }): Promise<Ticket> {
   const siteId = await resolveSiteId()
   const listId = await resolveListId(siteId)
-  let solicitadoPorLookupId: string | undefined
-  if (input.userEmail) {
-    solicitadoPorLookupId = await resolveSiteUserLookupId(siteId, input.userEmail)
+  const solicitadoPorLookupId = await resolveSolicitadoPorLookupId(siteId, listId, {
+    email: input.userEmail,
+    name: input.userName,
+    accessToken: input.accessToken,
+    sharePointAccessToken: input.sharePointAccessToken,
+  })
+  if (solicitadoPorLookupId == null) {
+    console.warn(
+      `[sharepoint] SolicitadoPor sin lookup (solo texto). email=${input.userEmail ?? '—'} name=${input.userName ?? '—'} tokenGraph=${input.accessToken ? 'sí' : 'no'} tokenSP=${input.sharePointAccessToken ? 'sí' : 'no'}`,
+    )
+  } else {
+    console.log(
+      `[sharepoint] SolicitadoPorLookupId=${solicitadoPorLookupId} (${input.userName ?? input.userEmail ?? 'usuario'})`,
+    )
   }
   const fields = buildSharePointFields({ ...input, solicitadoPorLookupId })
 

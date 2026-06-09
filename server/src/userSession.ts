@@ -2,6 +2,7 @@ import { resolveUserProfile, type ResolvedUser } from './azureAuth.js'
 
 export type UserSessionInput = {
   accessToken?: string
+  sharePointAccessToken?: string
   userEmail?: string
   userName?: string
   jobTitle?: string
@@ -17,6 +18,7 @@ function str(v: unknown): string | undefined {
 export function parseUserSessionBody(body: Record<string, unknown>): UserSessionInput {
   return {
     accessToken: str(body.accessToken),
+    sharePointAccessToken: str(body.sharePointAccessToken),
     userEmail: str(body.userEmail),
     userName: str(body.userName),
     jobTitle: str(body.jobTitle),
