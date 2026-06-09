@@ -79,18 +79,10 @@ stages:
     - download: current
       artifact: drop
 
-    - task: AzureWebApp@1
-      displayName: 'Deploy ZIP al App Service'
-      inputs:
-        azureSubscription: $(azureSubscription)
-        appType: 'webAppLinux'
-        appName: $(webAppName)
-        package: '$(Pipeline.Workspace)/drop/app.zip'
-
-    # runtimeStack/startUpCommand en AzureWebApp@1 provoca error en algunas versiones;
-    # startup y variables se aplican con Azure CLI.
+    # AzureWebApp@1 falla con webAppLinux + conexión Publish Profile:
+    # TypeError: updateStartupCommandAndRuntimeStack. Usamos Azure CLI.
     - task: AzureCLI@2
-      displayName: 'Startup + variables de entorno'
+      displayName: 'Deploy ZIP + startup + variables de entorno'
       inputs:
         azureSubscription: $(azureSubscription)
         scriptType: bash
@@ -102,6 +94,11 @@ stages:
             echo "No se encontró el resource group de $(webAppName)"
             exit 1
           fi
+          echo "Desplegando ZIP en $RG / $(webAppName)..."
+          az webapp deploy -g "$RG" -n '$(webAppName)' \
+            --src-path '$(Pipeline.Workspace)/drop/app.zip' \
+            --type zip \
+            --timeout 600000
           az webapp config set -g "$RG" -n '$(webAppName)' --startup-file 'npm start'
           az webapp config appsettings set -g "$RG" -n '$(webAppName)' --settings \
             NODE_ENV=production \
