@@ -121,6 +121,13 @@ function ChatSection({
     }),
     [userSession],
   )
+  const mustSignInForTickets = Boolean(
+    appConfig?.azureAuth?.enabled &&
+      appConfig?.sharePointTickets &&
+      !userSession.email?.trim() &&
+      !authLoading,
+  )
+
   const visitorName = useMemo(() => {
     const fromSession = userSession.name?.trim()
     if (fromSession) return fromSession
@@ -168,9 +175,24 @@ function ChatSection({
     }
   }, [onPickImage])
 
+  const buildApiSession = useCallback(async () => {
+    if (!appConfig?.sharePointTickets || !userSession.email) return sessionPayload
+    const refreshed = await refreshTicketAuthTokens(appConfig, userSession)
+    return {
+      ...sessionPayload,
+      accessToken: refreshed.accessToken ?? sessionPayload.accessToken,
+      sharePointAccessToken:
+        refreshed.sharePointAccessToken ?? sessionPayload.sharePointAccessToken,
+    }
+  }, [appConfig, sessionPayload, userSession])
+
   const send = useCallback(async () => {
     const trimmed = input.trim()
     if ((!trimmed && !pendingFile) || loading) return
+    if (mustSignInForTickets) {
+      setError('Inicie sesión con Microsoft para usar el chat y crear tickets en SharePoint.')
+      return
+    }
     setError(null)
     let image: ChatMessage['image']
     try {
@@ -189,7 +211,7 @@ function ChatSection({
     setPendingFile(null)
     setLoading(true)
     try {
-      const res = await postChat(next, sessionPayload)
+      const res = await postChat(next, await buildApiSession())
       setMessages([
         ...next,
         {
@@ -205,7 +227,15 @@ function ChatSection({
     } finally {
       setLoading(false)
     }
-  }, [input, loading, messages, pendingFile, previewUrl, sessionPayload])
+  }, [
+    buildApiSession,
+    input,
+    loading,
+    messages,
+    mustSignInForTickets,
+    pendingFile,
+    previewUrl,
+  ])
 
   const onConfirmTicket = useCallback(
     async (messageIndex: number, draft: TicketDraft) => {
@@ -213,21 +243,18 @@ function ChatSection({
       setConfirmingIndex(messageIndex)
       setError(null)
       try {
-        let payload = sessionPayload
-        if (appConfig?.sharePointTickets) {
-          const refreshed = await refreshTicketAuthTokens(appConfig, userSession)
-          payload = {
-            ...sessionPayload,
-            accessToken: refreshed.accessToken ?? sessionPayload.accessToken,
-            sharePointAccessToken:
-              refreshed.sharePointAccessToken ?? sessionPayload.sharePointAccessToken,
-          }
-          if (!payload.sharePointAccessToken && !payload.accessToken) {
-            setError(
-              'Inicie sesión con Microsoft de nuevo para registrar «Solicitado Por» en SharePoint.',
-            )
-            return
-          }
+        if (mustSignInForTickets) {
+          setError('Inicie sesión con Microsoft para crear el ticket (Solicitado Por).')
+          return
+        }
+        const payload = await buildApiSession()
+        if (
+          appConfig?.sharePointTickets &&
+          !payload.userEmail &&
+          !payload.userName
+        ) {
+          setError('Inicie sesión con Microsoft para crear el ticket (Solicitado Por).')
+          return
         }
         const { ticket } = await createTicketConfirm(draft, payload)
         setMessages((prev) =>
@@ -247,7 +274,7 @@ function ChatSection({
         setConfirmingIndex(null)
       }
     },
-    [appConfig, confirmingIndex, sessionPayload, userSession],
+    [appConfig, buildApiSession, confirmingIndex, mustSignInForTickets],
   )
 
   const onDismissTicket = useCallback((messageIndex: number) => {
@@ -321,12 +348,21 @@ function ChatSection({
           ) : null}
         </header>
         <p className="chatbot-card__hint">
-          Describa el error o adjunte una captura (pegar con Ctrl+V / Cmd+V).{' '}
-          {ticketsFromPortal
-            ? 'Si aparece un borrador de ticket, confírmelo con los botones.'
-            : helpdeskDeepLink
-              ? 'Para HelpDesk use el enlace que indique el asistente.'
-              : 'El registro formal del caso es en HelpDesk cuando el asistente lo indique.'}
+          {mustSignInForTickets ? (
+            <>
+              <strong>Inicie sesión con Microsoft</strong> para describir su problema y crear
+              tickets con su usuario en «Solicitado Por».
+            </>
+          ) : (
+            <>
+              Describa el error o adjunte una captura (pegar con Ctrl+V / Cmd+V).{' '}
+              {ticketsFromPortal
+                ? 'Si aparece un borrador de ticket, confírmelo con los botones.'
+                : helpdeskDeepLink
+                  ? 'Para HelpDesk use el enlace que indique el asistente.'
+                  : 'El registro formal del caso es en HelpDesk cuando el asistente lo indique.'}
+            </>
+          )}
         </p>
         {error ? <div className="error-banner chatbot-banner">{error}</div> : null}
         <div className="chat-messages">
@@ -456,10 +492,16 @@ function ChatSection({
             className="chatbot-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Escribe tu mensaje… (Enter para enviar, Mayús+Enter salto)"
+            placeholder={
+              mustSignInForTickets
+                ? 'Inicie sesión con Microsoft para continuar…'
+                : 'Escribe tu mensaje… (Enter para enviar, Mayús+Enter salto)'
+            }
             rows={2}
+            disabled={mustSignInForTickets}
             onPaste={onPasteImage}
             onKeyDown={(e) => {
+              if (mustSignInForTickets) return
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 void send()
@@ -469,7 +511,7 @@ function ChatSection({
           <button
             type="button"
             className="chatbot-send"
-            disabled={loading}
+            disabled={loading || mustSignInForTickets}
             onClick={() => void send()}
             aria-label="Enviar mensaje"
           >

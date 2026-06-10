@@ -97,15 +97,7 @@ export async function resolveUserSession(
         accessToken: fromAzure.accessToken,
         source: 'azure',
       }
-      const enriched = await enrichWithGraph(base, fromAzure.accessToken, silent?.account)
-      if (config.sharePointTickets && config.sharePointResourceOrigin) {
-        const tokens = await acquireTicketAuthTokens(config, enriched.email || fromUrl.email)
-        if (tokens?.accessToken) enriched.accessToken = tokens.accessToken
-        if (tokens?.sharePointAccessToken) {
-          enriched.sharePointAccessToken = tokens.sharePointAccessToken
-        }
-      }
-      return enriched
+      return enrichWithGraph(base, fromAzure.accessToken, silent?.account)
     }
 
     if (options.interactive) {

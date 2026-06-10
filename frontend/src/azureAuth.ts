@@ -10,32 +10,11 @@ let msalReady: Promise<PublicClientApplication | null> | null = null
 let redirectChecked = false
 let redirectResult: AuthenticationResult | null = null
 
-/** Graph: perfil + /sites/.../users. SharePoint: ensureuser para SolicitadoPor. */
+/** Solo Microsoft Graph (un recurso por solicitud de token). */
 const GRAPH_SCOPES = ['User.Read', 'Sites.ReadWrite.All']
 
 function sharePointScopes(host: string): string[] {
   return [`${host.replace(/\/$/, '')}/AllSites.Write`]
-}
-
-function allTicketScopes(sharePointHost?: string): string[] {
-  if (!sharePointHost) return GRAPH_SCOPES
-  return [...GRAPH_SCOPES, ...sharePointScopes(sharePointHost)]
-}
-
-function isInteractionRequired(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false
-  const e = err as { errorCode?: string; name?: string }
-  return (
-    e.errorCode === 'interaction_required' ||
-    e.errorCode === 'consent_required' ||
-    e.errorCode === 'login_required' ||
-    e.name === 'InteractionRequiredAuthError'
-  )
-}
-
-export type TicketAuthTokens = {
-  accessToken?: string
-  sharePointAccessToken?: string
 }
 
 function redirectUri(): string {
@@ -126,16 +105,12 @@ function cleanAuthFromUrl(): void {
   }
 }
 
-async function acquireSilent(
+async function acquireGraphSilent(
   app: PublicClientApplication,
   account: AccountInfo,
-  sharePointHost?: string,
 ): Promise<AuthenticationResult | null> {
   try {
-    return await app.acquireTokenSilent({
-      scopes: allTicketScopes(sharePointHost),
-      account,
-    })
+    return await app.acquireTokenSilent({ scopes: GRAPH_SCOPES, account })
   } catch {
     return null
   }
@@ -157,24 +132,29 @@ async function acquireSharePointSilent(
   }
 }
 
-/** Tokens con permisos para rellenar Solicitado Por en SharePoint. */
+export type TicketAuthTokens = {
+  accessToken?: string
+  sharePointAccessToken?: string
+}
+
+/**
+ * Tokens para crear ticket en SharePoint. Graph y SharePoint se piden por separado
+ * (mezclar recursos en una sola petición provoca bucles de consentimiento).
+ */
 export async function acquireTicketAuthTokens(
   config: AppConfig,
   loginHint?: string,
 ): Promise<TicketAuthTokens | null> {
-  const redirect = await processRedirectReturn(config)
+  await processRedirectReturn(config)
   const app = await getMsal(config)
   if (!app) return null
 
   const host = config.sharePointResourceOrigin
-  let account = redirect?.account ?? app.getAllAccounts()[0] ?? null
+  let account = app.getAllAccounts()[0] ?? null
 
   if (!account && loginHint?.includes('@')) {
     try {
-      const sso = await app.ssoSilent({
-        scopes: allTicketScopes(host),
-        loginHint,
-      })
+      const sso = await app.ssoSilent({ scopes: GRAPH_SCOPES, loginHint })
       account = sso.account
     } catch {
       /* sin cuenta */
@@ -183,29 +163,15 @@ export async function acquireTicketAuthTokens(
 
   if (!account) return null
 
-  try {
-    const graph = await app.acquireTokenSilent({
-      scopes: allTicketScopes(host),
-      account,
-    })
-    const sharePointAccessToken =
-      host != null ? await acquireSharePointSilent(app, account, host) : undefined
-    return {
-      accessToken: graph.accessToken,
-      sharePointAccessToken,
-    }
-  } catch (err) {
-    if (!isInteractionRequired(err)) return null
-    try {
-      await app.acquireTokenRedirect({
-        scopes: allTicketScopes(host),
-        account,
-        prompt: 'consent',
-      })
-    } catch (e) {
-      console.error('[auth] No se pudo renovar consentimiento SharePoint:', e)
-    }
-    return null
+  const graph = await acquireGraphSilent(app, account)
+  if (!graph?.accessToken) return null
+
+  const sharePointAccessToken =
+    host != null ? await acquireSharePointSilent(app, account, host) : undefined
+
+  return {
+    accessToken: graph.accessToken,
+    sharePointAccessToken,
   }
 }
 
@@ -219,16 +185,15 @@ export async function trySilentAuth(
   const app = await getMsal(config)
   if (!app) return null
 
-  const host = config.sharePointResourceOrigin
   const accounts = app.getAllAccounts()
   if (accounts.length > 0) {
-    const token = await acquireSilent(app, accounts[0], host)
+    const token = await acquireGraphSilent(app, accounts[0])
     if (token) return token
   }
 
   if (loginHint?.includes('@')) {
     try {
-      return await app.ssoSilent({ scopes: allTicketScopes(host), loginHint })
+      return await app.ssoSilent({ scopes: GRAPH_SCOPES, loginHint })
     } catch {
       return null
     }
@@ -238,7 +203,7 @@ export async function trySilentAuth(
 }
 
 /**
- * Login en la misma ventana (no popup). Si está embebido en iframe, abre la ventana superior.
+ * Login en la misma ventana. Sin prompt:consent (el admin ya concedió en Entra).
  */
 export async function signInWithRedirect(
   config: AppConfig,
@@ -247,11 +212,7 @@ export async function signInWithRedirect(
   const app = await getMsal(config)
   if (!app) return null
 
-  const request = {
-    scopes: allTicketScopes(config.sharePointResourceOrigin),
-    loginHint,
-    prompt: 'consent' as const,
-  }
+  const request = { scopes: GRAPH_SCOPES, loginHint }
 
   if (isEmbeddedFrame()) {
     try {

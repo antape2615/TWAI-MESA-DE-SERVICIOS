@@ -13,7 +13,12 @@ import {
   type EmailSendResult,
 } from './email.js'
 import { ticketsFromPortalEnabled } from './features.js'
-import { getSharePointListUrl, sharePointTicketsEnabled } from './sharepoint.js'
+import {
+  getSharePointListUrl,
+  hasSharePointRequesterIdentity,
+  sharePointTicketsEnabled,
+} from './sharepoint.js'
+import { azureAuthEnabled } from './azureAuth.js'
 import {
   buildFallbackDeepLink,
   buildPowerAppsDeepLink,
@@ -218,8 +223,17 @@ export async function runChat(params: {
     ? 'la lista de SharePoint de Mesa de Servicios (RPA_SOLICITUD_TICKET_SOPORTE)'
     : 'el sistema de tickets del portal'
 
+  const requesterKnown = hasSharePointRequesterIdentity({
+    userEmail: params.userEmail,
+    userName: params.userName,
+  })
+  const loginRequiredForTickets =
+    sharePointTickets && azureAuthEnabled() && !requesterKnown
+
   const ticketPolicyPortal = `Cuando haga falta escalamiento o un ticket, usa por defecto la herramienta **propose_ticket**: el usuario confirmará con el botón «Sí, generar ticket» en la interfaz. El ticket se registrará en ${ticketDestination}. Explica brevemente que puede pulsar el botón para crear el ticket con los datos que la IA preparó.
-Usa **create_ticket** solo si el usuario escribió de forma explícita que quiere crear el ticket ya en este mensaje (p. ej. confirma sin ambigüedad tras haber visto la propuesta).`
+Usa **create_ticket** solo si el usuario escribió de forma explícita que quiere crear el ticket ya en este mensaje (p. ej. confirma sin ambigüedad tras haber visto la propuesta).
+${loginRequiredForTickets ? '**IMPORTANTE:** el usuario NO ha iniciado sesión con Microsoft. NO llames a propose_ticket ni create_ticket; pídele que pulse «Iniciar sesión con Microsoft» arriba. Sin sesión no se puede rellenar «Solicitado Por» en SharePoint.' : ''}
+${requesterKnown ? `Usuario autenticado: ${params.userName ?? '—'} (${params.userEmail ?? 'sin correo'}). Al crear ticket, Solicitado Por debe ser este usuario.` : ''}`
 
   const noFaqTicketPolicy =
     noFaqMatch && portalTickets
@@ -338,13 +352,35 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
         }
 
         if (name === 'create_ticket') {
+          if (
+            sharePointTickets &&
+            azureAuthEnabled() &&
+            !hasSharePointRequesterIdentity({
+              userEmail: params.userEmail,
+              userName: params.userName,
+            })
+          ) {
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: JSON.stringify({
+                ok: false,
+                error:
+                  'El usuario debe iniciar sesión con Microsoft antes de crear el ticket (Solicitado Por en SharePoint).',
+              }),
+            })
+            continue
+          }
+
           const d = parseTicketArgs(args)
           const ansHours =
             knowledge.slaHoursByPriority[d.priority] ??
             knowledge.slaHoursByPriority['media'] ??
             24
 
-          const ticket = await createTicket({
+          let ticket
+          try {
+            ticket = await createTicket({
             title: d.title,
             description: d.description,
             category: d.category,
@@ -360,6 +396,16 @@ No inventes datos de sistemas internos; si no sabes, pide más detalle o orienta
             accessToken: params.accessToken,
             sharePointAccessToken: params.sharePointAccessToken,
           })
+          } catch (err) {
+            const msg =
+              err instanceof Error ? err.message : 'No se pudo crear el ticket'
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: JSON.stringify({ ok: false, error: msg }),
+            })
+            continue
+          }
           lastTicketId = ticket.id
           lastTicketDraft = undefined
           lastEmailResult = emailNotificationsEnabled()

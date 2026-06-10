@@ -91,6 +91,17 @@ app.post('/api/tickets', async (req, res) => {
     const knowledge = await readKnowledge()
     const { title, description, category, priority, possibleSolutions } = parsed.data
     const user = await resolveSessionUser(parsed.data)
+    if (
+      sharePointTicketsEnabled() &&
+      !user.email?.trim() &&
+      !user.name?.trim()
+    ) {
+      res.status(401).json({
+        error:
+          'Inicie sesión con Microsoft para crear el ticket (Solicitado Por en SharePoint).',
+      })
+      return
+    }
     const ansHours =
       knowledge.slaHoursByPriority[priority] ??
       knowledge.slaHoursByPriority['media'] ??

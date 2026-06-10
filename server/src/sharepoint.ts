@@ -44,6 +44,13 @@ export function sharePointTicketsEnabled(): boolean {
   )
 }
 
+export function hasSharePointRequesterIdentity(input: {
+  userEmail?: string
+  userName?: string
+}): boolean {
+  return Boolean(input.userEmail?.trim() || input.userName?.trim())
+}
+
 export function logSharePointStartupHint(): void {
   if (!sharePointTicketsEnabled()) {
     console.warn(
@@ -536,6 +543,11 @@ export async function createSharePointTicket(input: {
   accessToken?: string
   sharePointAccessToken?: string
 }): Promise<Ticket> {
+  if (!hasSharePointRequesterIdentity(input)) {
+    throw new Error(
+      'Debe iniciar sesión con Microsoft para crear el ticket en SharePoint (campo Solicitado Por).',
+    )
+  }
   const siteId = await resolveSiteId()
   const listId = await resolveListId(siteId)
   const solicitadoPorLookupId = await resolveSolicitadoPorLookupId(siteId, listId, {
