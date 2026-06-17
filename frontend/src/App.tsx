@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ClipboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ClipboardEvent, type ReactNode } from 'react'
 import './App.css'
 import {
   postChat,
@@ -34,6 +34,74 @@ function priorityClass(p: string): string {
   if (p === 'media') return 'badge badge--media'
   if (p === 'baja') return 'badge badge--baja'
   return 'badge'
+}
+
+function shortenUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl)
+    const compactPath = parsed.pathname.length > 26 ? `${parsed.pathname.slice(0, 26)}...` : parsed.pathname
+    return `${parsed.hostname}${compactPath}`
+  } catch {
+    return rawUrl.length > 40 ? `${rawUrl.slice(0, 40)}...` : rawUrl
+  }
+}
+
+function renderAutoLinks(text: string, keyPrefix: string): ReactNode[] {
+  const urlRegex = /https?:\/\/[^\s)]+/g
+  const nodes: ReactNode[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+  while ((match = urlRegex.exec(text)) !== null) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index))
+    const url = match[0]
+    nodes.push(
+      <a
+        key={`${keyPrefix}-url-${match.index}`}
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="bubble-link"
+      >
+        {shortenUrl(url)}
+      </a>,
+    )
+    cursor = match.index + url.length
+  }
+  if (cursor < text.length) nodes.push(text.slice(cursor))
+  return nodes
+}
+
+function renderMessageContent(content: string): ReactNode[] {
+  const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g
+  const nodes: ReactNode[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+  while ((match = markdownLinkRegex.exec(content)) !== null) {
+    if (match.index > cursor) {
+      nodes.push(...renderAutoLinks(content.slice(cursor, match.index), `txt-${match.index}`))
+    }
+    const [, label, url] = match
+    nodes.push(
+      <a
+        key={`md-${match.index}`}
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="bubble-link"
+      >
+        {label}
+      </a>,
+    )
+    cursor = match.index + match[0].length
+  }
+  if (cursor < content.length) {
+    nodes.push(...renderAutoLinks(content.slice(cursor), `tail-${cursor}`))
+  }
+  return nodes
+}
+
+function MessageText({ text }: { text: string }) {
+  return <p className="bubble-text">{renderMessageContent(text)}</p>
 }
 
 function ChatAvatarUser() {
@@ -382,7 +450,7 @@ function ChatSection({
                           alt="Captura del error"
                         />
                       ) : null}
-                      <p className="bubble-text">{m.content}</p>
+                      <MessageText text={m.content} />
                     </div>
                     <ChatAvatarUser />
                   </div>
@@ -400,7 +468,7 @@ function ChatSection({
                           alt="Captura del error"
                         />
                       ) : null}
-                      <p className="bubble-text">{m.content}</p>
+                      <MessageText text={m.content} />
                       {ticketsFromPortal && m.ticketCreatedId ? (
                         <p className="ticket-created-note">
                           Ticket <strong>{m.ticketCreatedId}</strong> creado
